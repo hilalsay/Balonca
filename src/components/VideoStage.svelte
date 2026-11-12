@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Overlay from './Overlay.svelte';
+  import WordPopover from './WordPopover.svelte';
+  import { wordPop } from '../lib/wordpop.svelte';
   import Mascot from './Mascot.svelte';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
@@ -36,7 +38,7 @@
     }, 0);
     window.addEventListener('blur', reclaim);
 
-    const onFs = () => (full = document.fullscreenElement === wrap);
+    const onFs = () => { full = document.fullscreenElement === wrap; wordPop.fullscreen = full; wordPop.close({ keepPaused: true }); };
     document.addEventListener('fullscreenchange', onFs);
     document.addEventListener('webkitfullscreenchange', onFs);
 
@@ -76,6 +78,7 @@
       <div class="placeholder error" role="alert">{t(`err.${player.error}` as MessageKey)}</div>
     {/if}
     <Overlay />
+    <WordPopover where="stage" />
   </div>
 
   <div class="controls">

@@ -14,6 +14,7 @@ export interface Settings {
   autoSubs: boolean; // a new video gets its own subtitle from YouTube automatically
   autoTranslate: 'ask' | AutoLang; // then: ask which language to translate into, or always use this one
   meaningLang: '' | AutoLang; // language word meanings were last shown in ('' = ask)
+  colorWords: boolean; // mark words in subtitles by how well the learner knows them
 }
 
 /** Languages offered for translation and word meanings. */
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSubs: true,
   autoTranslate: 'ask',
   meaningLang: '',
+  colorWords: true,
 };
 
 const clamp = (n: unknown, lo: number, hi: number, d: number) =>
@@ -58,5 +60,6 @@ export function sanitizeSettings(raw: unknown): Settings {
     autoSubs: bool(r.autoSubs, d.autoSubs),
     autoTranslate: oneOf(r.autoTranslate, ['ask', ...AUTO_LANGS] as const, d.autoTranslate),
     meaningLang: oneOf(r.meaningLang, ['', ...AUTO_LANGS] as const, d.meaningLang),
+    colorWords: bool(r.colorWords, d.colorWords),
   };
 }

@@ -3,6 +3,7 @@
   import VirtualList from './VirtualList.svelte';
   import WordRow from './WordRow.svelte';
   import Mascot from './Mascot.svelte';
+  import KnownBar from './KnownBar.svelte';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
   import { alignTracks } from '../lib/player/cues';
@@ -46,6 +47,8 @@
     <p class="muted">{app.exampleId && app.vid === app.exampleId ? t('transcript.example') : t('transcript.empty')}</p>
   </div>
 {:else}
+  <div class="tx">
+  <KnownBar track={primary} />
   <VirtualList
     bind:this={list}
     count={primary.cues.length}
@@ -78,9 +81,11 @@
       </div>
     {/snippet}
   </VirtualList>
+  </div>
 {/if}
 
 <style>
+  .tx { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
   .empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-6) var(--space-4); text-align: center; }
   .line { display: flex; gap: var(--space-2); padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; margin: 2px 0; }
   .line:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }

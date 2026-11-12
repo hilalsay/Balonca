@@ -36,7 +36,8 @@
     loading = true; error = null;
     try {
       const res = await defineWord({ word: word.w, lang: word.lang, to, ctx: word.ctx, signal: ctl.signal });
-      app.setMeaning(word.id, to, res);
+      if (res.temporary) error = t('pop.temporary'); // dictionary unreachable: do not keep a stopgap guess
+      else app.setMeaning(word.id, to, res);
     } catch (e) {
       const code = e instanceof DefineError ? e.code : 'failed';
       if (code !== 'cancelled') error = t(`meaning.err.${code}` as MessageKey);

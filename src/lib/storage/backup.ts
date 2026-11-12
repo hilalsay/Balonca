@@ -1,6 +1,6 @@
 import type { SavedWord, StoredTrack } from '../types';
 import { sanitizeSettings, type Settings } from '../settings';
-import { loadSettings, loadWords, getLastVideo } from './repo';
+import { loadSettings, loadWords, getLastVideo, loadKnown, sanitizeKnown, type KnownWords } from './repo';
 import type { Db } from './db';
 
 export const BACKUP_VERSION = 1;
@@ -13,6 +13,7 @@ export interface Backup {
   words: SavedWord[];
   tracks: StoredTrack[];
   lastVideo: string | null;
+  known?: KnownWords; // optional: backups from before "I know this" have none
 }
 
 export class BackupError extends Error {
@@ -26,7 +27,7 @@ export async function exportBackup(db: Db): Promise<Backup> {
   return {
     app: 'balonca', version: BACKUP_VERSION, exportedAt: new Date().toISOString(),
     settings: await loadSettings(db), words: await loadWords(db),
-    tracks: await db.getAll('tracks'), lastVideo: await getLastVideo(db),
+    tracks: await db.getAll('tracks'), lastVideo: await getLastVideo(db), known: await loadKnown(db),
   };
 }
 
@@ -90,6 +91,7 @@ export function parseBackup(text: string): Backup {
     words: data.words.map(cleanWord).filter((w: SavedWord | null): w is SavedWord => !!w),
     tracks: data.tracks.map(cleanTrack).filter((t: StoredTrack | null): t is StoredTrack => !!t),
     lastVideo: isStr(data.lastVideo) ? data.lastVideo : null,
+    known: sanitizeKnown(data.known),
   };
 }
 
@@ -108,6 +110,11 @@ export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge')
     words++;
   }
   for (const t of b.tracks) await tx.objectStore('tracks').put(t);
+  // Known words: replace takes the backup's, merge unites both.
+  const mine = mode === 'merge' ? sanitizeKnown(await tx.objectStore('meta').get('known')) : {};
+  const known: KnownWords = { ...mine };
+  for (const [lang, keys] of Object.entries(b.known ?? {})) known[lang] = [...new Set([...(known[lang] ?? []), ...keys])];
+  await tx.objectStore('meta').put(known, 'known');
   if (mode === 'replace') {
     await tx.objectStore('meta').put({ ...b.settings }, 'settings');
     if (b.lastVideo) await tx.objectStore('meta').put(b.lastVideo, 'lastVideo');

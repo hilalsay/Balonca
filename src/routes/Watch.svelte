@@ -6,6 +6,8 @@
   import WordsMini from '../components/WordsMini.svelte';
   import Tabs from '../components/Tabs.svelte';
   import AutoStatus from '../components/AutoStatus.svelte';
+  import WordPopover from '../components/WordPopover.svelte';
+  import { wordPop } from '../lib/wordpop.svelte';
   import { autoSubs } from '../lib/auto.svelte';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
@@ -36,7 +38,7 @@
   // The URL is the source of truth: #/watch?v=ID&t=SECONDS (also used by "jump to word").
   // With neither a URL nor a saved video, a machine that has an example installed opens that one.
   $effect(() => {
-    if (router.route !== 'watch') { untrack(() => player.pause()); return; }
+    if (router.route !== 'watch') { untrack(() => { wordPop.close({ keepPaused: true }); player.pause(); }); return; }
     const fromUrl = router.params.get('v');
     const at = Number(router.params.get('t')) || 0;
     untrack(async () => {
@@ -87,6 +89,8 @@
     <VideoStage bind:this={stage} />
     <AutoStatus />
   </div>
+
+  <WordPopover where="page" />
 
   <aside class="card side">
     <Tabs {tabs} bind:active={tab} label={t('nav.watch')}>

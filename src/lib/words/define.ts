@@ -28,7 +28,10 @@ export async function defineWord(opts: {
     throw new DefineError(e === 'rate-limit' ? 'rate-limit' : e?.startsWith('llm-unreachable') || e === 'llm-model-missing' || !body ? 'unavailable' : 'failed');
   }
   if (!Array.isArray(body.senses) || typeof body.inContext !== 'string') throw new DefineError('failed');
-  return { lemma: body.lemma ?? opts.word, inContext: body.inContext, senses: body.senses, source: body.source === 'ai' ? 'ai' : 'dictionary', at: Date.now() };
+  return {
+    lemma: body.lemma ?? opts.word, inContext: body.inContext, senses: body.senses, source: body.source === 'ai' ? 'ai' : 'dictionary',
+    ...(body.temporary ? { temporary: true } : {}), at: Date.now(),
+  };
 }
 
 const POS = ['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'numeral', 'article', 'determiner', 'particle', 'proper noun', 'phrase'] as const;

@@ -73,7 +73,7 @@ class AutoSubs {
           job.lang = baseLang(src.code);
           const text = await fetchRemoteSub(vid, src, signal);
           if (!alive()) return;
-          if (!ingestText(text, `${vid}.${src.code}.json3`, job.lang)) throw new SubsApiError('failed');
+          if (!ingestText(text, `${vid}.${src.code}.json3`, job.lang, { quiet: true })) throw new SubsApiError('failed');
           job.manual = src.kind === 'manual';
           job.phase = 'done';
         } catch (e) {
@@ -97,7 +97,7 @@ class AutoSubs {
         if (manual) {
           try {
             const text = await fetchRemoteSub(vid, manual, signal);
-            if (alive() && ingestText(text, `${vid}.${manual.code}.json3`, lang)) { job.manual = true; job.phase = 'done'; continue; }
+            if (alive() && ingestText(text, `${vid}.${manual.code}.json3`, lang, { quiet: true })) { job.manual = true; job.phase = 'done'; continue; }
           } catch { /* fall back to translating */ }
           if (!alive()) return;
         }

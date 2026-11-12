@@ -54,7 +54,8 @@ async function wiktionary(word, fetchImpl, signal) {
   let missing = false;
   for (const w of [word, word[0].toUpperCase() + word.slice(1)]) { // nouns like German "Haus" are capitalised
     let res = null;
-    for (let attempt = 0; attempt < 2 && !res; attempt++) { // one retry for a hiccup (timeout, 429, 5xx)
+    for (let attempt = 0; attempt < 3 && !res; attempt++) { // retries for a hiccup (timeout, 429, 5xx)
+      if (attempt) await new Promise((r) => setTimeout(r, 400 * attempt));
       try {
         const r = await fetchImpl(`https://en.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(w)}`, {
           headers: { 'user-agent': UA, accept: 'application/json' },

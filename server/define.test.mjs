@@ -145,3 +145,15 @@ describe('POST /api/define', () => {
     await rm(dir, { recursive: true, force: true });
   });
 });
+
+describe('Wiktionary retries', () => {
+  it('waits and tries up to three times before giving up', async () => {
+    let n = 0;
+    const flaky = async (url) => (++n < 3 ? Promise.reject(new TypeError('fetch failed')) : fakeFetch(url));
+    const t0 = Date.now();
+    const r = await lookup('leugen', 'nl', { fetchImpl: flaky });
+    expect(r.senses).toHaveLength(1);
+    expect(n).toBe(3);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1000); // 400 ms + 800 ms pauses
+  });
+});

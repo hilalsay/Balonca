@@ -1,4 +1,9 @@
 import http from 'node:http';
+import net from 'node:net';
+
+// Node gives each address only 250 ms when it races IPv4/IPv6 ("happy eyeballs"); from this server Wiktionary often
+// needs a little longer, which made about 1 in 10 lookups fail with ETIMEDOUT. Give a connection a fair chance.
+net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
 import { createTranslateHandler, ollamaStatus } from './translate.mjs';
 import { createDefineHandler } from './define.mjs';

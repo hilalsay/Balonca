@@ -12,7 +12,7 @@ Videos play through YouTube's official IFrame player only; nothing is downloaded
 ## Features
 - Several subtitle tracks at once (the video's own + translations): show/hide and ±0.2 s sync in Settings
 - Subtitles come from YouTube by themselves (parsers for `.json3`, `.vtt`, `.srt`); auto-caption rolling duplicates merged
-- Click-to-save words (per language), saved words marked everywhere, jump back to the moment, CSV export
+- Known words ("I know this") per language, kept in backups; saved words marked everywhere, jump back to the moment, CSV export
 - Flashcard review with simple spaced repetition (again / good / easy), progress and counts
 - Transcript synced to playback, virtualized for long videos; prev/next line, repeat line, speed, fullscreen
 - Optional: hide translations until tapped, pause at the end of each line, 4 subtitle styles incl. high contrast
@@ -20,6 +20,8 @@ Videos play through YouTube's official IFrame player only; nothing is downloaded
 - **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube, asks which language to
   translate into (or uses the remembered one), and translates with a local Ollama model; lines appear while the rest
   is translated
+- **Tap a word while watching**: a card shows its meaning in that sentence, with "add to my words" and "I know this";
+  words are coloured by status (new / learning / known) and the transcript shows what share of the video's words you know
 - **Word meanings**: 📖 next to a saved word shows its meaning in that sentence, the dictionary form, other meanings
   and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the local model)
 - Turkish and English UI, light / dark / auto theme, mobile-first layout

@@ -16,6 +16,7 @@
     ['autoScroll', 'settings.autoScroll'],
     ['hideSecondary', 'settings.hideSecondary'],
     ['autoPause', 'settings.autoPause'],
+    ['colorWords', 'settings.colorWords'],
   ] as const;
   const keys: [string, MessageKey][] = [
     ['Space', 'kbd.play'], ['← →', 'kbd.line'], ['R', 'kbd.loop'], ['F', 'kbd.full'], ['W', 'kbd.word'],

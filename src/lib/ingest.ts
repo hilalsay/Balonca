@@ -5,9 +5,10 @@ import { toast } from './toast.svelte';
 import type { MessageKey } from './i18n/tr';
 
 /** Adds one subtitle (file contents or pasted text) to the current video, reporting the outcome to the user. */
-export function ingestText(text: string, name: string, lang?: string): boolean {
+export function ingestText(text: string, name: string, lang?: string, opts: { quiet?: boolean } = {}): boolean {
   try {
     const { track, result } = app.addTrack(text, name, lang);
+    if (opts.quiet) return true; // the automatic flow reports progress in its own status bar
     toast(t('tracks.added', { name, n: result.cues.length }), 'success');
     if (result.merged) toast(t('tracks.merged', { n: result.merged }), 'info');
     if (result.skipped) toast(t('tracks.skipped', { n: result.skipped }), 'info');

@@ -42,6 +42,7 @@ export interface WordMeaning {
   inContext: string; // what it means in the saved sentence
   senses: { head: string; pos: string; meaning: string; en?: string; example?: string; best?: boolean }[];
   source: 'dictionary' | 'ai'; // 'ai': no dictionary entry, the model guessed
+  temporary?: boolean; // the dictionary could not be reached: a stopgap guess, never stored
   at: number;
 }
 
