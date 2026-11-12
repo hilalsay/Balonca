@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
+  import { tour } from '../lib/tour.svelte';
 
   const faq = [1, 2, 3, 4, 5, 6] as const;
   const keys: [string, MessageKey][] = [
@@ -12,6 +13,10 @@
 <div class="help">
   <h1>{t('help.title')}</h1>
   <p class="muted lead">{t('help.lead')}</p>
+  <div class="card tourcard">
+    <div><strong>{t('tour.button')}</strong><p class="muted">{t('tour.help')}</p></div>
+    <button class="primary" onclick={() => tour.start()}>✨ {t('tour.start')}</button>
+  </div>
 
   <div class="card faq">
     {#each faq as n, i}
@@ -51,4 +56,7 @@
   .keys div { display: flex; gap: var(--space-3); align-items: baseline; }
   dt { min-width: 5.5rem; } dd { margin: 0; color: var(--muted); }
   kbd { font: 700 0.85rem var(--font-body); background: var(--surface-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 2px 8px; }
+  .tourcard { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: space-between; background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+  .tourcard p { margin: 4px 0 0; }
+  .tourcard button { min-height: 48px; padding: 0 22px; border-radius: 99px; font-weight: 800; }
 </style>

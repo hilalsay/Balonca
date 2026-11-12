@@ -4,6 +4,7 @@
   import { app } from '../lib/state.svelte';
   import { watchUrl } from '../lib/router.svelte';
   import { parseVideoId } from '../lib/player/youtube';
+  import { tour } from '../lib/tour.svelte';
 
   let url = $state('');
   let bad = $state(false);
@@ -51,6 +52,10 @@
   </ol>
 </section>
 
+<div class="tour-row">
+  <button class="tour" onclick={() => tour.start()}>✨ {t('tour.button')}</button>
+</div>
+
 <p class="muted private">{t('home.private')}</p>
 
 <style>
@@ -72,6 +77,8 @@
   .resume { display: inline-flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); padding: 6px 16px 6px 6px; border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); text-decoration: none; font-weight: 700; }
   .resume:hover { border-color: var(--accent); }
   .resume img { border-radius: 8px; object-fit: cover; }
+  .tour-row { display: flex; justify-content: center; margin-top: var(--space-4); }
+  .tour { min-height: 48px; padding: 0 22px; border-radius: 99px; font-weight: 800; }
   .private { text-align: center; margin-top: var(--space-5); }
   .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
   .steps h3 { margin: var(--space-2) 0 var(--space-1); }

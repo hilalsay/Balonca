@@ -2,6 +2,8 @@
   import Header from './components/Header.svelte';
   import Toasts from './components/Toasts.svelte';
   import BottomNav from './components/BottomNav.svelte';
+  import Tour from './components/Tour.svelte';
+  import { tour } from './lib/tour.svelte';
   import Home from './routes/Home.svelte';
   import NotFound from './routes/NotFound.svelte';
   import { router } from './lib/router.svelte';
@@ -26,6 +28,9 @@
   let watchOpened = $state(router.route === 'watch');
   $effect(() => { if (router.route === 'watch') watchOpened = true; });
   const Watch = $derived(loaded.watch);
+
+  // First visit only: offer a short tour (never started on its own; always available from Home, Help, Settings).
+  $effect(() => { if (app.ready) { const h = setTimeout(() => tour.maybeOffer(), 900); return () => clearTimeout(h); } });
   const Page = $derived(router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 
@@ -45,6 +50,7 @@
 </main>
 <footer class:on-watch={router.route === 'watch'}><small class="muted">{t('footer.note')}</small></footer>
 <BottomNav />
+<Tour />
 <Toasts />
 
 <style>
