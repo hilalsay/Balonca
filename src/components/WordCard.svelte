@@ -40,14 +40,14 @@
   <div class="actions">
     {#if DEFINE_ENABLED}
       <button class="mean" class:on={open} aria-expanded={open} onclick={() => (open = !open)}>
-        📖 {open ? t('words.meaning.hide') : meaning ? t('words.meaning.more') : t('words.meaning.show')}
+        📖 <span class="long">{open ? t('words.meaning.hide') : meaning ? t('words.meaning.more') : t('words.meaning.show')}</span><span class="short">{t('words.meaning.short')}</span>
       </button>
     {/if}
     {#if word.vid}
       {#if onplay}
         <button class="play" onclick={() => onplay(word.t)} aria-label={t('words.play', { time: fmt(word.t) })}>▶ {fmt(word.t)}</button>
       {:else}
-        <a class="play" href={watchUrl(word.vid, word.t)} aria-label={t('words.play', { time: fmt(word.t) })}>▶ {t('words.watch')} · {fmt(word.t)}</a>
+        <a class="play" href={watchUrl(word.vid, word.t)} aria-label={t('words.play', { time: fmt(word.t) })}>▶ <span class="long">{t('words.watch')} · </span>{fmt(word.t)}</a>
       {/if}
     {/if}
     <span class="grow"></span>
@@ -75,5 +75,12 @@
   .mean.on { background: var(--accent-soft); border-color: var(--accent); }
   a.play { display: inline-flex; align-items: center; border: 1.5px solid var(--line); border-radius: var(--radius-sm); text-decoration: none; color: var(--text); background: var(--surface); }
   a.play:hover { border-color: var(--accent); }
+  .short { display: none; }
+  @media (max-width: 760px) {
+    .long { display: none; }
+    .short { display: inline; }
+    .actions { flex-wrap: nowrap; gap: 6px; }
+    .mean, .play { min-height: 40px; }
+  }
   .actions :global(.wrap button) { min-height: 38px; min-width: 38px; padding: 0 10px; font-size: 0.88rem; }
 </style>

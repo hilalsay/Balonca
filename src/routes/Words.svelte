@@ -201,6 +201,17 @@
   .grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
   .more { width: 100%; margin-top: var(--space-3); }
 
+  @media (max-width: 760px) {
+    .page { gap: var(--space-3); }
+    h1 { font-size: 1.5rem; }
+    .chips { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .chip { flex: none; }
+    .hero { padding: var(--space-4); gap: var(--space-3); }
+    .hero .big { width: 100%; justify-content: center; }
+    .tools { flex-wrap: nowrap; }
+    .tools input { flex: 1 1 auto; }
+    .sort select { width: 8.5rem; }
+  }
   .extra summary { cursor: pointer; font-weight: 800; min-height: 44px; display: flex; align-items: center; gap: 8px; list-style: none; }
   .extra summary::-webkit-details-marker { display: none; }
   .extra summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; }

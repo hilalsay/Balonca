@@ -2,6 +2,10 @@
   import { app } from '../lib/state.svelte';
   import { t, i18n } from '../lib/i18n/index.svelte';
   import { langName } from '../lib/languages';
+  import { autoSubs } from '../lib/auto.svelte';
+  import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
+
+  const offer = $derived(SUBS_API_ENABLED && app.tracks.length && !autoSubs.running ? autoSubs.offerable() : []);
 
   const isAi = (name: string) => / \(AI…?\)$/.test(name);
   const shift = (id: string, cur: number, d: number) => app.updateTrack(id, { offset: Math.round((cur + d) * 10) / 10 });
@@ -29,6 +33,14 @@
       </li>
     {/each}
   </ul>
+  {#if offer.length}
+    <div class="more">
+      <span class="muted">{t('auto.askMore')}</span>
+      {#each offer as code}<button onclick={() => autoSubs.translateTo(code)}>＋ {langName(code, i18n.locale)}</button>{/each}
+    </div>
+  {:else if autoSubs.running}
+    <p class="muted small">{t('subs.translating')}</p>
+  {/if}
   <p class="muted small">{t('subs.hint')}</p>
 {:else}
   <p class="muted small">{t('subs.none')}</p>
@@ -50,5 +62,7 @@
   .sync button { min-width: 36px; min-height: 36px; padding: 0; }
   .sync output { min-width: 3.2rem; text-align: center; font-size: 0.85rem; font-variant-numeric: tabular-nums; color: var(--muted); }
   .remove { min-width: 36px; min-height: 36px; padding: 0; color: var(--danger); }
+  .more { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: var(--space-2); font-size: 0.88rem; }
+  .more button { border-radius: 99px; min-height: 36px; padding: 0 14px; font-size: 0.88rem; }
   .small { font-size: 0.85rem; margin: var(--space-2) 0 0; }
 </style>

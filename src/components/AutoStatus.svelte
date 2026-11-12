@@ -34,7 +34,7 @@
 </script>
 
 {#if SUBS_API_ENABLED && (showJobs || autoSubs.running || offer.length)}
-  <div class="auto" role="status" aria-live="polite">
+  <div class="auto" class:only-more={!showJobs && !autoSubs.running && !first} role="status" aria-live="polite">
     {#if showJobs}
       <ul>
         {#each autoSubs.jobs as j}
@@ -62,7 +62,7 @@
         {#if first}
           <label class="remember">
             <input type="checkbox" bind:checked={remember} />
-            <span>{t('auto.remember')}</span>
+            <span class="long">{t('auto.remember')}</span><span class="short">{t('auto.remember.short')}</span>
           </label>
         {/if}
       </div>
@@ -91,5 +91,16 @@
   .ask:not(.first) .langs button { min-height: 36px; font-size: 0.88rem; }
   .remember { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); min-height: 36px; flex-basis: 100%; }
   .remember input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .short { display: none; }
+  @media (max-width: 760px) { .remember .long { display: none; } .remember .short { display: inline; } }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 760px) {
+    .auto.only-more, .ask:not(.first) { display: none; } /* phones: offered under Settings → Subtitles instead */
+    .auto { padding: 6px 10px; gap: 6px; border-radius: 12px; }
+    li { font-size: 0.85rem; }
+    .ask { gap: 6px 8px; }
+    .q, .ask.first .q { font-size: 0.9rem; }
+    .langs button { min-height: 36px; padding: 0 14px; }
+    .remember { min-height: 28px; font-size: 0.8rem; }
+  }
 </style>

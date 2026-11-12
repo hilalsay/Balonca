@@ -62,6 +62,13 @@
   .go button { min-height: 52px; padding: 0 24px; border-radius: 99px; font-weight: 800; box-shadow: var(--shadow-lg); }
   .error { color: var(--danger); font-weight: 700; }
   @media (max-width: 440px) { .go { flex-direction: column; } }
+  @media (max-width: 760px) {
+    .hero { padding: var(--space-4) 0 var(--space-4); gap: var(--space-2); }
+    .hero :global(svg) { width: 76px; height: auto; }
+    h1 { font-size: 2rem; }
+    .hero p { font-size: 1rem; }
+    .steps { gap: var(--space-2); }
+  }
   .resume { display: inline-flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); padding: 6px 16px 6px 6px; border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); text-decoration: none; font-weight: 700; }
   .resume:hover { border-color: var(--accent); }
   .resume img { border-radius: 8px; object-fit: cover; }

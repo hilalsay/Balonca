@@ -106,4 +106,16 @@
   .grades kbd { font-size: 0.7rem; opacity: 0.6; }
   .again { border-color: var(--danger); }
   .done { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-5) 0; text-align: center; }
+  /* Phones: review is a full-screen moment; the grade buttons sit at the bottom, under the thumb. */
+  @media (max-width: 760px) {
+    .review { position: fixed; inset: 0; z-index: 250; margin: 0; border-radius: 0; border: 0;
+      display: flex; flex-direction: column; gap: var(--space-2); overflow-y: auto; background: var(--bg);
+      padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom)); }
+    .face { flex: 1; align-content: center; padding: var(--space-2) 0; gap: var(--space-3); }
+    .grades { position: sticky; bottom: 0; width: 100%; gap: var(--space-2); padding-top: var(--space-2); background: var(--bg); }
+    .grades button { min-height: 68px; }
+    .grades kbd { display: none; }
+    .big { width: 100%; }
+    .sentence { font-size: 1.1rem; }
+  }
 </style>

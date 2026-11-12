@@ -55,3 +55,12 @@ textarea { padding: var(--space-3); }
 
 /* iPhone Safari cannot fullscreen arbitrary elements; the stage fakes it with a fixed layer. */
 body.pseudo-fs { overflow: hidden; }
+
+/* Phones: a bottom tab bar replaces the header links; pages leave room for it. */
+:root { --nav-h: 0px; }
+@media (max-width: 760px) {
+  :root { --nav-h: 62px; }
+}
+@media (max-width: 760px) and (orientation: landscape) {
+  :root { --nav-h: 0px; }
+}

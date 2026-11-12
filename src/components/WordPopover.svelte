@@ -161,7 +161,13 @@
     box-shadow: 0 12px 40px rgb(20 10 50 / 0.28); font-size: 0.95rem; line-height: 1.4; text-align: left;
     animation: rise 0.14s ease-out;
   }
-  .pop.sheet { width: auto; max-width: none; border-radius: var(--radius) var(--radius) 0 0; padding-bottom: max(var(--space-4), env(safe-area-inset-bottom)); }
+  .pop.sheet { width: auto; max-width: none; border-radius: 22px 22px 0 0; border: 0; padding: 22px var(--space-4) max(var(--space-4), env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 40px rgb(20 10 50 / 0.25); animation: sheet 0.2s ease-out; }
+  .pop.sheet::before { content: ''; position: absolute; top: 8px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 99px; background: var(--line); }
+  .pop.sheet .word { font-size: 1.5rem; }
+  .pop.sheet .ans { font-size: 1.3rem; }
+  .pop.sheet .actions button { min-height: 50px; font-size: 1rem; border-radius: 14px; }
+  @keyframes sheet { from { transform: translateY(100%); } }
   .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-right: 36px; position: relative; }
   .word { font: 800 1.3rem var(--font-display); }
   .lemma { color: var(--muted); font-weight: 700; }

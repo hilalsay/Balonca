@@ -56,4 +56,9 @@
   i.learn { border-bottom: 2px dashed var(--pink); height: 0.4em; border-radius: 0; }
   i.know { background: var(--good); opacity: 0.45; }
   .tip { flex-basis: 100%; }
+  @media (max-width: 760px) {
+    .kb { font-size: 0.8rem; gap: 3px; }
+    .legend { display: none; } /* phones: one line plus the bar; the colours explain themselves */
+    .kb { padding-bottom: 6px; }
+  }
 </style>

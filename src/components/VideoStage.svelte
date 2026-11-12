@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Overlay from './Overlay.svelte';
+  import Icon from './Icon.svelte';
   import WordPopover from './WordPopover.svelte';
   import { wordPop } from '../lib/wordpop.svelte';
   import Mascot from './Mascot.svelte';
@@ -9,6 +10,8 @@
   import { t } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
 
+  /** `onlink`: phones fold the link field away; this button brings it back. */
+  let { onlink }: { onlink?: () => void } = $props();
   let wrap: HTMLDivElement;
   let host: HTMLDivElement;
   let stage: HTMLDivElement;
@@ -93,18 +96,21 @@
       <span class="time" aria-hidden="true">{fmt(player.duration)}</span>
     </div>
     <div class="buttons">
-      <button onclick={() => player.jump(-1)} aria-label={t('ctl.prev')} title={t('ctl.prev')}>⏮</button>
+      <button onclick={() => player.jump(-1)} aria-label={t('ctl.prev')} title={t('ctl.prev')}><Icon name="prev" /></button>
       <button class="primary play" onclick={() => player.toggle()} aria-label={player.playing ? t('ctl.pause') : t('ctl.play')}>
-        {player.playing ? '⏸' : '▶'}
+        <Icon name={player.playing ? 'pause' : 'play'} fill />
       </button>
-      <button onclick={() => player.jump(1)} aria-label={t('ctl.next')} title={t('ctl.next')}>⏭</button>
+      <button onclick={() => player.jump(1)} aria-label={t('ctl.next')} title={t('ctl.next')}><Icon name="next" /></button>
       <select aria-label={t('ctl.speed')} value={player.rate} onchange={(e) => player.setRate(+e.currentTarget.value)}>
         {#each RATES as r}<option value={r}>{r}×</option>{/each}
       </select>
-      <button class="toggle" aria-pressed={player.loop} onclick={() => (player.loop = !player.loop)} aria-label={t('ctl.loop')} title="{t('ctl.loop')} (R)">⟲</button>
+      <button class="toggle" aria-pressed={player.loop} onclick={() => (player.loop = !player.loop)} aria-label={t('ctl.loop')} title="{t('ctl.loop')} (R)"><Icon name="repeat" /></button>
       <button class="spacer" onclick={toggleFullscreen} aria-label={isFull ? t('ctl.exitFullscreen') : t('ctl.fullscreen')} title="{t('ctl.fullscreen')} (F)">
-        {isFull ? '🗗' : '⛶'}
+        <Icon name={isFull ? 'shrink' : 'expand'} />
       </button>
+      {#if onlink && !isFull}
+        <button class="link-btn" onclick={onlink} aria-label={t('watch.change')} title={t('watch.change')}><Icon name="link" /></button>
+      {/if}
     </div>
   </div>
 </div>
@@ -125,12 +131,31 @@
   .seek input { flex: 1; min-width: 0; accent-color: var(--accent); min-height: 32px; }
   .time { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--muted); min-width: 3.2rem; text-align: center; }
   .buttons { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-  .buttons button { min-width: 44px; padding: 0 12px; }
+  .buttons button { min-width: 44px; padding: 0 12px; display: inline-grid; place-items: center; }
+  .link-btn { display: none !important; }
   .play { min-width: 56px !important; }
   .toggle[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .spacer { margin-left: auto; }
   select { min-width: 72px; }
 
+  @media (max-width: 760px) {
+    .wrap { gap: 4px; }
+    .stage { border-radius: 14px; }
+    .seek input { min-height: 28px; }
+    .time { min-width: 2.6rem; font-size: 0.78rem; }
+    /* every control shares the row, so it fits any phone width (no fixed minimums that push the page wider) */
+    .buttons { gap: 6px; flex-wrap: nowrap; }
+    .buttons > * { flex: 1 1 0; min-width: 0 !important; }
+    .buttons button { min-height: 42px; padding: 0; }
+    .buttons .play { flex-grow: 1.4; }
+    .buttons select { flex-grow: 1.5; min-height: 42px; padding: 0 2px; text-align: center; }
+    .spacer { margin-left: 0; }
+    .link-btn { display: inline-grid !important; }
+  }
+  /* Phones held sideways: the video is sized by the height that is left, next to the tabs. */
+  @media (max-width: 760px) and (orientation: landscape) {
+    .stage { height: calc(100dvh - var(--header-h, 52px) - 120px); width: auto; max-width: 100%; aspect-ratio: 16 / 9; margin: 0 auto; }
+  }
   .wrap.full { position: fixed; inset: 0; z-index: 100; background: #000; padding: 0; gap: 0; grid-template-rows: 1fr auto; }
   .wrap.full .stage { aspect-ratio: auto; border-radius: 0; box-shadow: none; }
   .wrap.full .controls { background: #14111f; padding: var(--space-2) var(--space-3); padding-bottom: max(var(--space-2), env(safe-area-inset-bottom)); color: #fff; }

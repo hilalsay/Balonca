@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import VideoStage from '../components/VideoStage.svelte';
   import Transcript from '../components/Transcript.svelte';
   import SettingsPanel from '../components/SettingsPanel.svelte';
@@ -21,6 +21,12 @@
   let stage: VideoStage;
   let url = $state('');
   let urlError = $state(false);
+  let showUrl = $state(false); // phones: the link field folds away once a video is open
+  let urlInput: HTMLInputElement;
+  async function toggleUrl() {
+    showUrl = !showUrl;
+    if (showUrl) { await tick(); urlInput?.focus(); urlInput?.select(); }
+  }
 
   const tabs = $derived<{ id: TabId; label: string }[]>([
     { id: 'transcript', label: t('tab.transcript') },
@@ -32,7 +38,7 @@
     e.preventDefault();
     const id = parseVideoId(url);
     urlError = !id;
-    if (id) location.hash = watchUrl(id);
+    if (id) { location.hash = watchUrl(id); showUrl = false; }
   }
 
   // The URL is the source of truth: #/watch?v=ID&t=SECONDS (also used by "jump to word").
@@ -79,14 +85,14 @@
 
 <div class="watch">
   <div class="video-col">
-    <form class="url" onsubmit={submit}>
+    <form class="url" class:folded={!!app.vid && !showUrl && !urlError} onsubmit={submit}>
       <label class="sr-only" for="yt-url">{t('watch.url.label')}</label>
-      <input id="yt-url" type="url" inputmode="url" bind:value={url} placeholder={t('watch.url.placeholder')} aria-invalid={urlError} autocomplete="off" />
+      <input id="yt-url" type="url" inputmode="url" bind:this={urlInput} bind:value={url} placeholder={t('watch.url.placeholder')} aria-invalid={urlError} autocomplete="off" />
       <button class="primary" type="submit">{t('watch.load')}</button>
     </form>
     {#if urlError}<p class="error" role="alert">{t('watch.badlink')}</p>{/if}
     {#if !app.storageOk}<p class="notice" role="status">{t('watch.nostorage')}</p>{/if}
-    <VideoStage bind:this={stage} />
+    <VideoStage bind:this={stage} onlink={toggleUrl} />
     <AutoStatus />
   </div>
 
@@ -116,7 +122,23 @@
   @media (min-width: 901px) {
     .video-col { position: sticky; top: calc(var(--header-h, 64px) + var(--space-3)); }
   }
-  @media (max-width: 900px) {
+  /* Phones: one screen, no page scroll. Video and controls on top, the tabs fill the rest and scroll inside. */
+  @media (max-width: 760px) {
+    .watch { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2);
+      height: calc(100dvh - var(--header-h, 56px) - var(--nav-h) - env(safe-area-inset-bottom) - 2 * var(--space-3)); }
+    .video-col { position: static; flex: none; margin: 0; padding: 0; background: none; gap: var(--space-2); }
+    .url.folded { display: none; }
+    .side { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--space-2); border-radius: 18px; }
+    .side :global(.tabs) { margin-bottom: var(--space-2); }
+    .side :global(.tabs button) { min-height: 38px; font-size: 0.92rem; }
+    .side :global(.panel) { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    .transcript { height: 100%; min-height: 0; }
+  }
+  @media (max-width: 760px) and (orientation: landscape) {
+    .watch { flex-direction: row; }
+    .video-col { flex: 0 0 56%; min-width: 0; overflow-y: auto; }
+  }
+  @media (min-width: 761px) and (max-width: 900px) {
     .watch { grid-template-columns: 1fr; gap: var(--space-3); }
     /* video stays in view while the transcript / words scroll underneath */
     .video-col { position: sticky; top: var(--header-h, 100px); z-index: 20; background: var(--bg); padding-bottom: var(--space-2); margin: 0 calc(var(--space-4) * -1); padding-inline: var(--space-4); }
