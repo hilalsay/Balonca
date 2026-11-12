@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
 import { createTranslateHandler, ollamaStatus } from './translate.mjs';
+import { createDefineHandler } from './define.mjs';
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '127.0.0.1'; // keep it behind a reverse proxy
@@ -27,9 +28,11 @@ if (llmOn) {
   console.log(st.ok ? `translation: ${llm.model} at ${llm.baseUrl}` : `WARNING: Ollama model "${llm.model}" not reachable at ${llm.baseUrl}; translation requests will fail until it is.`);
 }
 const cacheDir = process.env.TRANSLATE_CACHE_DIR ?? new URL('../.cache/translations', import.meta.url).pathname;
+const defineCacheDir = process.env.DEFINE_CACHE_DIR ?? new URL('../.cache/definitions', import.meta.url).pathname;
 
 const handler = createHandler({
   translate: llmOn ? createTranslateHandler({ ...llm, cacheDir, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12) }) : null,
+  define: llmOn ? createDefineHandler({ llm, cacheDir: defineCacheDir }) : null,
   llmStatus: llmOn ? () => ollamaStatus(llm) : null,
   run,
   ytdlpInstalled: Boolean(version),

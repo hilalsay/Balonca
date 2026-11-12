@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, type Settings } from './settings';
-import { TRACK_COLORS, uid, type SavedWord, type StoredTrack } from './types';
+import { TRACK_COLORS, uid, type SavedWord, type StoredTrack, type WordMeaning } from './types';
 import { openBalonca, loadSettings, saveSettings, loadWords, putWord, deleteWord, deleteLanguage, loadTracks, saveTracks,
   getLastVideo, setLastVideo, exportBackup, parseBackup, importBackup, type Db } from './storage';
 import { parseSubtitles } from './subtitles';
@@ -151,6 +151,14 @@ class AppState {
     this.words = list;
     if (this.db) void (added ? putWord(this.db, $state.snapshot(w) as SavedWord) : deleteWord(this.db, w.id));
     return added;
+  }
+
+  /** Stores a word's meaning in one language (shown again instantly, kept in backups). */
+  setMeaning(id: string, to: string, meaning: WordMeaning) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w) return;
+    w.meanings = { ...(w.meanings ?? {}), [to]: meaning };
+    if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
   }
 
   isSaved(lang: string, key: string) {

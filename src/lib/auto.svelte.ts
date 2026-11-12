@@ -4,6 +4,7 @@ import { listRemoteSubs, fetchRemoteSub, SubsApiError, SUBS_API_ENABLED, type Re
 import { baseLang, pickManual, pickSource } from './ytsubs/pick';
 import { serverTranslate } from './translate/server';
 import { TranslateError } from './translate/runner';
+import { AUTO_LANGS } from './settings';
 
 export type JobPhase = 'fetch' | 'queued' | 'translate' | 'done' | 'error';
 export interface Job { kind: 'source' | 'target'; lang: string; phase: JobPhase; done: number; total: number; ahead: number; error?: string; manual?: boolean }
@@ -17,11 +18,17 @@ class AutoSubs {
   private ctl: AbortController | null = null;
   private openedFor: string | null = null;
 
-  /** Target languages this video still lacks (empty when the source language is unknown). */
-  missing(): string[] {
+  /** Languages this video could still be translated into (empty when its own language is unknown). */
+  offerable(): string[] {
     const src = app.tracks[0]?.lang;
     if (!src || src === '??') return [];
-    return app.settings.autoTargets.filter((l) => l !== src && !app.tracks.some((t) => t.lang === l));
+    return AUTO_LANGS.filter((l) => l !== src && !app.tracks.some((t) => t.lang === l));
+  }
+
+  /** The user picked a language in the status bar. `remember` makes it the automatic choice from now on. */
+  translateTo(lang: string, remember = false) {
+    if (remember) app.setSetting('autoTranslate', lang as (typeof AUTO_LANGS)[number]);
+    if (app.vid) void this.run(app.vid, [lang]);
   }
 
   cancel() { this.ctl?.abort(); }
@@ -36,11 +43,16 @@ class AutoSubs {
     this.cancel();
     this.jobs = [];
     if (!SUBS_API_ENABLED || !app.settings.autoSubs) return;
-    const interrupted = app.tracks.some((t) => t.name.endsWith(PARTIAL));
-    if (!app.tracks.length || interrupted) await this.run(vid);
+    const interrupted = app.tracks.filter((t) => t.name.endsWith(PARTIAL)).map((t) => t.lang);
+    if (!app.tracks.length || interrupted.length) await this.run(vid, interrupted.length ? interrupted : undefined);
   }
 
-  async run(vid: string) {
+  /**
+   * Gets the video's own subtitle if it has none, then translates into `targets`. Without `targets` that is the
+   * remembered language (Settings), or nothing: the status bar then asks which language to translate into, so no
+   * time is spent on a translation the user does not want.
+   */
+  async run(vid: string, targets?: string[]) {
     this.cancel();
     const ctl = (this.ctl = new AbortController());
     const signal = ctl.signal;
@@ -74,7 +86,9 @@ class AutoSubs {
 
       const source = app.tracks[0];
       if (!source || !alive()) return;
-      for (const lang of this.missing()) {
+      const auto = app.settings.autoTranslate;
+      const wanted = targets ?? (auto === 'ask' ? [] : [auto]);
+      for (const lang of this.offerable().filter((l) => wanted.includes(l))) {
         if (!alive()) return;
         const job = this.add({ kind: 'target', lang, phase: 'translate' });
         // A hand-made YouTube subtitle in the target language beats any machine translation.

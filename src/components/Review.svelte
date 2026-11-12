@@ -15,6 +15,8 @@
 
   const card = $derived(app.words.find((w) => w.id === queue[0]));
   const parts = $derived(card ? tokenize(card.ctx, card.lang) : []);
+  // A meaning saved from the word list, in the language the learner reads meanings in (or any saved one).
+  const meaning = $derived(card ? ((app.settings.meaningLang && card.meanings?.[app.settings.meaningLang]) || Object.values(card.meanings ?? {})[0]) : undefined);
 
   function preview(g: Grade): string {
     if (!card) return '';
@@ -62,6 +64,10 @@
           <div class="label muted">{t('review.context')}</div>
           <p class="sentence" lang={card.lang}>{#each parts as p}{#if p.isWord && p.key === card.w}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}</p>
           {#each card.trans as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
+          {#if meaning}
+            <div class="label muted">{t('meaning.here')}</div>
+            <p class="meaning">{meaning.inContext}{#if meaning.lemma && meaning.lemma !== card.w}<span class="muted"> · {meaning.lemma}</span>{/if}</p>
+          {/if}
         </div>
         <div class="grades">
           <button class="again" onclick={() => answer('again')}><strong>{t('review.again')}</strong><small>{preview('again')}</small><kbd>1</kbd></button>
@@ -92,6 +98,7 @@
   .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
   .sentence { font-size: 1.2rem; margin: 0; }
   .trans { margin: 0; color: var(--muted); font-size: 1.05rem; }
+  .meaning { margin: 0; font-weight: 800; color: var(--accent); font-size: 1.15rem; }
   mark { background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 0 4px; font-weight: 700; }
   .grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); width: min(100%, 30rem); }
   .grades button { display: grid; gap: 2px; justify-items: center; padding: var(--space-3) var(--space-2); min-height: 72px; }

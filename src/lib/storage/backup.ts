@@ -43,7 +43,27 @@ function cleanWord(x: any): SavedWord | null {
     vid: isStr(x.vid) ? x.vid : undefined, t: isNum(x.t) ? x.t : 0, added: isNum(x.added) ? x.added : Date.now(),
     reps: isNum(x.reps) ? x.reps : 0, ivl: isNum(x.ivl) ? x.ivl : 0, ease: isNum(x.ease) ? x.ease : 2.5,
     lapses: isNum(x.lapses) ? x.lapses : 0, due: isNum(x.due) ? x.due : undefined,
+    ...(cleanMeanings(x.meanings) ? { meanings: cleanMeanings(x.meanings) } : {}),
   };
+}
+
+/** Word meanings from a backup file, field by field (rendered as text, but still untrusted). */
+function cleanMeanings(raw: any): SavedWord['meanings'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<SavedWord['meanings']> = {};
+  for (const [to, m] of Object.entries(raw).slice(0, 6) as [string, any][]) {
+    if (!/^[a-z]{2,3}$/.test(to) || !m || !isStr(m.inContext) || !Array.isArray(m.senses)) continue;
+    out[to] = {
+      lemma: isStr(m.lemma) ? m.lemma.slice(0, 60) : '', inContext: m.inContext.slice(0, 200),
+      source: m.source === 'ai' ? 'ai' : 'dictionary', at: isNum(m.at) ? m.at : 0,
+      senses: m.senses.filter((s: any) => s && isStr(s.meaning)).slice(0, 10).map((s: any) => ({
+        head: isStr(s.head) ? s.head.slice(0, 60) : '', pos: isStr(s.pos) ? s.pos.slice(0, 30) : '', meaning: s.meaning.slice(0, 200),
+        ...(isStr(s.en) ? { en: s.en.slice(0, 200) } : {}), ...(isStr(s.example) ? { example: s.example.slice(0, 200) } : {}),
+        ...(s.best === true ? { best: true } : {}),
+      })),
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function cleanTrack(x: any): StoredTrack | null {

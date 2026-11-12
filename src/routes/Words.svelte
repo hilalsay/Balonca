@@ -2,6 +2,8 @@
   import Mascot from '../components/Mascot.svelte';
   import Review from '../components/Review.svelte';
   import ConfirmButton from '../components/ConfirmButton.svelte';
+  import WordMeaning from '../components/WordMeaning.svelte';
+  import { DEFINE_ENABLED } from '../lib/words/define';
   import { app } from '../lib/state.svelte';
   import { t, i18n } from '../lib/i18n/index.svelte';
   import { langName } from '../lib/languages';
@@ -18,6 +20,12 @@
   let query = $state('');
   let limit = $state(PAGE);
   let reviewing = $state(false);
+  let open = $state<Set<string>>(new Set());
+  const toggle = (id: string) => { const n = new Set(open); if (n.has(id)) n.delete(id); else n.add(id); open = n; };
+  const preview = (w: (typeof app.words)[number]) => {
+    const m = (app.settings.meaningLang && w.meanings?.[app.settings.meaningLang]) || Object.values(w.meanings ?? {})[0];
+    return m?.inContext;
+  };
   let pendingBackup = $state<string | null>(null);
   let importInput: HTMLInputElement;
 
@@ -107,11 +115,17 @@
               <div class="body">
                 <strong lang={w.lang}>{w.w}</strong>
                 {#if (w.ivl ?? 0) >= 7}<span class="badge" title={t('words.learned')}>✓</span>{/if}
+                {#if preview(w)}<span class="gloss">· {preview(w)}</span>{/if}
                 <div class="ctx muted" lang={w.lang}>{w.ctx}</div>
                 {#each w.trans as tr}<div class="ctx tr" lang={tr.lang}>{tr.text}</div>{/each}
               </div>
+              {#if DEFINE_ENABLED}
+                <button class="mean" class:on={open.has(w.id)} aria-expanded={open.has(w.id)} onclick={() => toggle(w.id)}
+                  aria-label={t('meaning.button.label', { word: w.w })}>📖 <span class="lbl">{t('meaning.button')}</span></button>
+              {/if}
               {#if w.vid}<a class="btn" href={watchUrl(w.vid, w.t)} aria-label={t('words.play', { time: fmt(w.t) })}>▶ {fmt(w.t)}</a>{/if}
               <button class="del" onclick={() => app.removeWord(w.id)} aria-label={t('words.remove', { word: w.w })}>✕</button>
+              {#if open.has(w.id)}<div class="panel"><WordMeaning word={w} /></div>{/if}
             </li>
           {/each}
         </ul>
@@ -161,7 +175,12 @@
   .tools input { flex: 1 1 200px; min-width: 0; }
   button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
-  li { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--line); }
+  li { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--line); }
+  .panel { flex-basis: 100%; }
+  .gloss { color: var(--accent); font-weight: 700; margin-left: 4px; }
+  .mean { padding: 0 12px; min-width: 44px; }
+  .mean.on { background: var(--accent-soft); border-color: var(--accent); }
+  @media (max-width: 560px) { .mean .lbl { display: none; } }
   .body { flex: 1; min-width: 0; }
   .body strong { font-size: 1.1rem; }
   .badge { color: var(--good); font-weight: 800; margin-left: 6px; }

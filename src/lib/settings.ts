@@ -11,12 +11,14 @@ export interface Settings {
   autoScroll: boolean;
   hideSecondary: boolean; // blur 2nd+ tracks until clicked
   autoPause: boolean; // pause at the end of every line
-  autoSubs: boolean; // a new video gets its YouTube subtitle and the translations below automatically
-  autoTargets: string[]; // languages to translate into automatically (the video's own language is skipped)
+  autoSubs: boolean; // a new video gets its own subtitle from YouTube automatically
+  autoTranslate: 'ask' | AutoLang; // then: ask which language to translate into, or always use this one
+  meaningLang: '' | AutoLang; // language word meanings were last shown in ('' = ask)
 }
 
-/** Languages offered for automatic translation. */
+/** Languages offered for translation and word meanings. */
 export const AUTO_LANGS = ['tr', 'en', 'nl'] as const;
+export type AutoLang = (typeof AUTO_LANGS)[number];
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
@@ -29,7 +31,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hideSecondary: false,
   autoPause: false,
   autoSubs: true,
-  autoTargets: ['tr', 'en'],
+  autoTranslate: 'ask',
+  meaningLang: '',
 };
 
 const clamp = (n: unknown, lo: number, hi: number, d: number) =>
@@ -53,8 +56,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     hideSecondary: bool(r.hideSecondary, d.hideSecondary),
     autoPause: bool(r.autoPause, d.autoPause),
     autoSubs: bool(r.autoSubs, d.autoSubs),
-    autoTargets: Array.isArray(r.autoTargets)
-      ? AUTO_LANGS.filter((c) => (r.autoTargets as unknown[]).includes(c))
-      : [...d.autoTargets],
+    autoTranslate: oneOf(r.autoTranslate, ['ask', ...AUTO_LANGS] as const, d.autoTranslate),
+    meaningLang: oneOf(r.meaningLang, ['', ...AUTO_LANGS] as const, d.meaningLang),
   };
 }

@@ -71,8 +71,9 @@ describe('pickSource / pickManual', () => {
 });
 
 describe('automatic subtitle settings', () => {
-  it('defaults on with Turkish and English, and keeps only offered languages', () => {
-    expect(sanitizeSettings({})).toMatchObject({ autoSubs: true, autoTargets: ['tr', 'en'] });
-    expect(sanitizeSettings({ autoSubs: false, autoTargets: ['nl', 'xx', 'en', 5] })).toMatchObject({ autoSubs: false, autoTargets: ['en', 'nl'] });
+  it('defaults to fetching the subtitle and asking for the translation language', () => {
+    expect(sanitizeSettings({})).toMatchObject({ autoSubs: true, autoTranslate: 'ask' });
+    expect(sanitizeSettings({ autoSubs: false, autoTranslate: 'en' })).toMatchObject({ autoSubs: false, autoTranslate: 'en' });
+    expect(sanitizeSettings({ autoTranslate: 'xx', autoTargets: ['tr', 'en'] })).toMatchObject({ autoTranslate: 'ask' });
   });
 });

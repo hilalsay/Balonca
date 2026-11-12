@@ -112,7 +112,7 @@ export function semaphore(limit, queueMax) {
 
 export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
-  ttlMs = 10 * 60_000, now = Date.now, translate = null, llmStatus = null,
+  ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, llmStatus = null,
 } = {}) {
   const limit = rateLimiter(ratePerMinute, now);
   const slot = semaphore(2, 4);
@@ -145,6 +145,12 @@ export function createHandler({
         if (req.method !== 'POST') throw new ApiError(405, 'method');
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
         return await translate(req, res, ip); // streams its own response
+      }
+      if (url.pathname === '/api/define') {
+        if (!define) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'POST') throw new ApiError(405, 'method');
+        if (!limit(ip)) throw new ApiError(429, 'rate-limit');
+        return await define(req, res, ip);
       }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
       if (url.pathname === '/api/health') {

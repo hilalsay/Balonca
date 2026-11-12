@@ -7,11 +7,7 @@
   import { i18n } from '../lib/i18n/index.svelte';
   import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
 
-  function toggleTarget(code: string, on: boolean) {
-    const set = new Set(app.settings.autoTargets);
-    if (on) set.add(code); else set.delete(code);
-    app.setSetting('autoTargets', AUTO_LANGS.filter((c) => set.has(c)));
-  }
+  const translateChoices = ['ask', ...AUTO_LANGS] as const;
 
   const styles: SubStyle[] = ['box', 'outline', 'shadow', 'contrast'];
   const toggles = [
@@ -68,11 +64,11 @@
         <span>{t('settings.autoSubs')}</span>
       </label>
       <fieldset class="styles" disabled={!app.settings.autoSubs}>
-        <legend>{t('settings.autoTargets')}</legend>
-        {#each AUTO_LANGS as code}
-          <label class="chip" class:on={app.settings.autoTargets.includes(code)}>
-            <input type="checkbox" checked={app.settings.autoTargets.includes(code)} onchange={(e) => toggleTarget(code, e.currentTarget.checked)} />
-            {langName(code, i18n.locale)}
+        <legend>{t('settings.autoTranslate')}</legend>
+        {#each translateChoices as code}
+          <label class="chip" class:on={app.settings.autoTranslate === code}>
+            <input type="radio" name="autotranslate" checked={app.settings.autoTranslate === code} onchange={() => app.setSetting('autoTranslate', code)} />
+            {code === 'ask' ? t('settings.autoTranslate.ask') : langName(code, i18n.locale)}
           </label>
         {/each}
       </fieldset>

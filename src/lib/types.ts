@@ -33,6 +33,16 @@ export interface SavedWord {
   ease: number;
   lapses: number;
   due?: number; // epoch ms; undefined = new card, due now
+  meanings?: Record<string, WordMeaning>; // by the language they are explained in ("tr", "en"…)
+}
+
+/** What /api/define answers: dictionary senses (Wiktionary) explained in one language, best match first. */
+export interface WordMeaning {
+  lemma: string; // dictionary form ("graven" for "graaf")
+  inContext: string; // what it means in the saved sentence
+  senses: { head: string; pos: string; meaning: string; en?: string; example?: string; best?: boolean }[];
+  source: 'dictionary' | 'ai'; // 'ai': no dictionary entry, the model guessed
+  at: number;
 }
 
 export const TRACK_COLORS = ['#ffb020', '#2dd4a7', '#38bdf8', '#ff8fb8', '#a995ff'] as const;
