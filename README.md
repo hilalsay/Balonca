@@ -18,8 +18,11 @@ Videos play through YouTube's official IFrame player only; nothing is downloaded
 - Transcript synced to playback, virtualized for long videos; prev/next line, repeat line, speed, fullscreen
 - Optional: hide translations until tapped, pause at the end of each line, 4 subtitle styles incl. high contrast
 - Full backup/restore of words, settings and subtitles as one JSON file
-- **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube, then translates it with a
-  local Ollama model into the languages you pick (Turkish, English, Dutch); lines appear while the rest is translated
+- **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube, asks which language to
+  translate into (or uses the remembered one), and translates with a local Ollama model; lines appear while the rest
+  is translated
+- **Word meanings**: 📖 next to a saved word shows its meaning in that sentence, the dictionary form, other meanings
+  and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the local model)
 - Optional in-browser translation helper (local model on the server, or your own Anthropic API key)
 - Turkish and English UI, light / dark / auto theme, mobile-first layout
 
@@ -126,6 +129,16 @@ Environment: `OLLAMA_URL` (default `http://127.0.0.1:11434`, `off` disables tran
 On a CPU, `gemma3` (4B) translates about one sentence per second: a 10-minute video takes 3–4 minutes.
 English output is good; Turkish is usable with occasional wrong words, and a larger model (e.g. `gemma3:12b`, ~8 GB RAM)
 improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translating.
+
+## Word meanings
+`POST /api/define` with `{word, lang, to, ctx}` answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
+1. Senses come from [Wiktionary](https://en.wiktionary.org) (`/api/rest_v1/page/definition/<word>`): grammar lines such as
+   "first-person singular present" are dropped, and "inflection of graven" is followed to *graven*.
+2. The local model only picks the sense used in the saved sentence (asked in English, the easiest task for a small
+   model) and, for Turkish or Dutch, translates the English glosses. The English original stays visible for checking.
+3. A word Wiktionary does not have (names, misheard words) gets the model's own guess, labelled `source: "ai"`.
+Results are cached on disk (`DEFINE_CACHE_DIR`, default `.cache/definitions/`), except a guess made while Wiktionary
+could not be reached. In the app, meanings are saved with the word, shown on flashcards and kept in backups.
 
 ## Example video (optional, installed per machine)
 The repository contains no example video or captions. If you want first-time visitors to land on a video that already
