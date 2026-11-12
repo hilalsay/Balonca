@@ -117,6 +117,21 @@ class AppState {
     return track;
   }
 
+  /** Appends cues to a track (streamed translation). Cues must come in time order. */
+  appendCues(id: string, cues: StoredTrack['cues']) {
+    const t = this.tracks.find((x) => x.id === id);
+    if (!t) return;
+    t.cues.push(...cues);
+    this.persistTracks();
+  }
+
+  renameTrack(id: string, name: string) {
+    const t = this.tracks.find((x) => x.id === id);
+    if (!t) return;
+    t.name = name;
+    this.persistTracks();
+  }
+
   updateTrack(id: string, patch: Partial<Pick<StoredTrack, 'label' | 'lang' | 'color' | 'visible' | 'offset'>>) {
     const t = this.tracks.find((x) => x.id === id);
     if (!t) return;

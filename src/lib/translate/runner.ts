@@ -13,7 +13,7 @@ export interface RunOptions {
 
 export class TranslateError extends Error {
   constructor(
-    public readonly code: 'bad-key' | 'rate-limit' | 'network' | 'bad-response' | 'api' | 'cancelled',
+    public readonly code: 'bad-key' | 'rate-limit' | 'network' | 'bad-response' | 'api' | 'cancelled' | 'busy' | 'unavailable',
     public readonly detail?: string,
   ) {
     super(detail ? `${code}: ${detail}` : code);

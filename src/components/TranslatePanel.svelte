@@ -4,12 +4,14 @@
   import { LANGUAGES, langName } from '../lib/languages';
   import { anthropicTranslator, MODELS } from '../lib/translate/anthropic';
   import { translateCues, TranslateError } from '../lib/translate/runner';
+  import { serverTranslate, SERVER_TRANSLATE_ENABLED } from '../lib/translate/server';
   import { toast } from '../lib/toast.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
 
   const STORE = 'balonca.anthropicKey';
   const saved = (() => { try { return localStorage.getItem(STORE) ?? ''; } catch { return ''; } })();
 
+  let provider = $state<'server' | 'anthropic'>(SERVER_TRANSLATE_ENABLED ? 'server' : 'anthropic');
   let key = $state(saved);
   let remember = $state(!!saved);
   let sourceId = $state('');
@@ -29,9 +31,11 @@
 
   async function start() {
     if (!source) { toast(t('translate.need'), 'error'); return; }
-    persistKey();
+    if (source.lang === target) { toast(t('translate.same'), 'error'); return; }
     ctl = new AbortController();
     running = true; done = 0; total = source.cues.length;
+    if (provider === 'server') return startServer(source, ctl);
+    persistKey();
     const from = langName(source.lang, 'en');
     const to = langName(target, 'en');
     try {
@@ -49,23 +53,51 @@
       running = false; ctl = null;
     }
   }
+
+  /** Local model on Balonca's server: lines appear in a new track while the rest is still being translated. */
+  async function startServer(src: NonNullable<typeof source>, c: AbortController) {
+    const track = app.addCues([], `${src.name} → ${target} (AI)`, target);
+    try {
+      const cues = await serverTranslate({
+        cues: $state.snapshot(src.cues), from: src.lang, to: target, signal: c.signal,
+        onCues: (part, d, n) => { app.appendCues(track.id, part); done = d; total = n; },
+      });
+      toast(t('translate.done', { n: cues.length }), 'success');
+    } catch (e) {
+      app.removeTrack(track.id);
+      const code = e instanceof TranslateError ? e.code : 'network';
+      toast(t(`auto.err.${code}` as MessageKey), code === 'cancelled' ? 'info' : 'error', 7000);
+    } finally {
+      running = false; ctl = null;
+    }
+  }
 </script>
 
 <details class="tr">
   <summary>{t('translate.title')}</summary>
-  <p class="muted">{t('translate.desc')}</p>
+  <p class="muted">{t(provider === 'server' ? 'translate.desc.server' : 'translate.desc')}</p>
   {#if !app.tracks.length}
     <p class="muted">{t('translate.need')}</p>
   {:else}
     <form onsubmit={(e) => { e.preventDefault(); void start(); }}>
-      <label>{t('translate.key')}
-        <input type="password" bind:value={key} autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required disabled={running} />
-      </label>
-      <p class="muted small">{t('translate.key.note')}</p>
-      <div class="inline">
-        <label class="check"><input type="checkbox" bind:checked={remember} onchange={persistKey} /> {t('translate.remember')}</label>
-        {#if saved || (remember && key)}<button type="button" onclick={forget}>{t('translate.forget')}</button>{/if}
-      </div>
+      {#if SERVER_TRANSLATE_ENABLED}
+        <label>{t('translate.provider')}
+          <select bind:value={provider} disabled={running}>
+            <option value="server">{t('translate.provider.server')}</option>
+            <option value="anthropic">{t('translate.provider.anthropic')}</option>
+          </select>
+        </label>
+      {/if}
+      {#if provider === 'anthropic'}
+        <label>{t('translate.key')}
+          <input type="password" bind:value={key} autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required disabled={running} />
+        </label>
+        <p class="muted small">{t('translate.key.note')}</p>
+        <div class="inline">
+          <label class="check"><input type="checkbox" bind:checked={remember} onchange={persistKey} /> {t('translate.remember')}</label>
+          {#if saved || (remember && key)}<button type="button" onclick={forget}>{t('translate.forget')}</button>{/if}
+        </div>
+      {/if}
       <label>{t('translate.source')}
         <select bind:value={sourceId} disabled={running}>
           {#each app.tracks as tr}<option value={tr.id}>{tr.label || langName(tr.lang, i18n.locale)} · {tr.name}</option>{/each}
@@ -76,12 +108,14 @@
           {#each Object.keys(LANGUAGES) as code}<option value={code}>{langName(code, i18n.locale)}</option>{/each}
         </select>
       </label>
-      <label>{t('translate.model')}
-        <select bind:value={model} disabled={running}>
-          {#each MODELS as m}<option value={m.id}>{m.label}</option>{/each}
-        </select>
-      </label>
-      <p class="muted small">{t('translate.cost')}</p>
+      {#if provider === 'anthropic'}
+        <label>{t('translate.model')}
+          <select bind:value={model} disabled={running}>
+            {#each MODELS as m}<option value={m.id}>{m.label}</option>{/each}
+          </select>
+        </label>
+        <p class="muted small">{t('translate.cost')}</p>
+      {/if}
       {#if running}
         <progress max={total} value={done} aria-label={t('translate.progress', { done, total })}></progress>
         <div class="inline">

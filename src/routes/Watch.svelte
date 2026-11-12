@@ -6,6 +6,8 @@
   import SettingsPanel from '../components/SettingsPanel.svelte';
   import WordsMini from '../components/WordsMini.svelte';
   import Tabs from '../components/Tabs.svelte';
+  import AutoStatus from '../components/AutoStatus.svelte';
+  import { autoSubs } from '../lib/auto.svelte';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
   import { router, watchUrl } from '../lib/router.svelte';
@@ -44,7 +46,8 @@
       if (!v || !parseVideoId(v)) return;
       await app.openVideo(v);
       url = `https://youtu.be/${v}`;
-      void app.seedExample();
+      await app.seedExample();
+      void autoSubs.onOpen(v);
       if (player.loaded !== v) player.load(v, at);
       else if (at) player.seek(at);
     });
@@ -84,6 +87,7 @@
     {#if urlError}<p class="error" role="alert">{t('watch.badlink')}</p>{/if}
     {#if !app.storageOk}<p class="notice" role="status">{t('watch.nostorage')}</p>{/if}
     <VideoStage bind:this={stage} />
+    <AutoStatus />
   </div>
 
   <aside class="card side">

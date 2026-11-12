@@ -2,7 +2,16 @@
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
-  import type { SubStyle } from '../lib/settings';
+  import { AUTO_LANGS, type SubStyle } from '../lib/settings';
+  import { langName } from '../lib/languages';
+  import { i18n } from '../lib/i18n/index.svelte';
+  import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
+
+  function toggleTarget(code: string, on: boolean) {
+    const set = new Set(app.settings.autoTargets);
+    if (on) set.add(code); else set.delete(code);
+    app.setSetting('autoTargets', AUTO_LANGS.filter((c) => set.has(c)));
+  }
 
   const styles: SubStyle[] = ['box', 'outline', 'shadow', 'contrast'];
   const toggles = [
@@ -51,6 +60,26 @@
     {/each}
   </section>
 
+  {#if SUBS_API_ENABLED}
+    <section>
+      <h3>{t('settings.auto')}</h3>
+      <label class="toggle">
+        <input type="checkbox" checked={app.settings.autoSubs} onchange={(e) => app.setSetting('autoSubs', e.currentTarget.checked)} />
+        <span>{t('settings.autoSubs')}</span>
+      </label>
+      <fieldset class="styles" disabled={!app.settings.autoSubs}>
+        <legend>{t('settings.autoTargets')}</legend>
+        {#each AUTO_LANGS as code}
+          <label class="chip" class:on={app.settings.autoTargets.includes(code)}>
+            <input type="checkbox" checked={app.settings.autoTargets.includes(code)} onchange={(e) => toggleTarget(code, e.currentTarget.checked)} />
+            {langName(code, i18n.locale)}
+          </label>
+        {/each}
+      </fieldset>
+      <p class="muted small">{t('settings.auto.note')}</p>
+    </section>
+  {/if}
+
   <section>
     <h3>{t('settings.shortcuts')}</h3>
     <dl class="keys">
@@ -78,6 +107,8 @@
   .chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-4); border: 1.5px solid var(--line); border-radius: 99px; cursor: pointer; font-weight: 700; background: var(--surface); }
   .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  fieldset:disabled { opacity: 0.5; }
+  .small { font-size: 0.85rem; margin: var(--space-2) 0 0; }
   .chip:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
   .toggle { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; }
   .toggle input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }

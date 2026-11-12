@@ -11,7 +11,12 @@ export interface Settings {
   autoScroll: boolean;
   hideSecondary: boolean; // blur 2nd+ tracks until clicked
   autoPause: boolean; // pause at the end of every line
+  autoSubs: boolean; // a new video gets its YouTube subtitle and the translations below automatically
+  autoTargets: string[]; // languages to translate into automatically (the video's own language is skipped)
 }
+
+/** Languages offered for automatic translation. */
+export const AUTO_LANGS = ['tr', 'en', 'nl'] as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
@@ -23,6 +28,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoScroll: true,
   hideSecondary: false,
   autoPause: false,
+  autoSubs: true,
+  autoTargets: ['tr', 'en'],
 };
 
 const clamp = (n: unknown, lo: number, hi: number, d: number) =>
@@ -45,5 +52,9 @@ export function sanitizeSettings(raw: unknown): Settings {
     autoScroll: bool(r.autoScroll, d.autoScroll),
     hideSecondary: bool(r.hideSecondary, d.hideSecondary),
     autoPause: bool(r.autoPause, d.autoPause),
+    autoSubs: bool(r.autoSubs, d.autoSubs),
+    autoTargets: Array.isArray(r.autoTargets)
+      ? AUTO_LANGS.filter((c) => (r.autoTargets as unknown[]).includes(c))
+      : [...d.autoTargets],
   };
 }
