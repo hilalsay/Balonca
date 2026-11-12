@@ -82,7 +82,8 @@ export const systemPrompt = (from, to) =>
   `- Translate every item into natural, short, spoken ${to}, under the same key.\n` +
   `- Each item is translated on its own: never move words from one item to another, never merge or skip items.\n` +
   `- Keep names as they are. Translate sound tags like [music] too, keeping the brackets.\n` +
-  `- Write only ${to}. Never leave an item in ${from}.`;
+  `- Write only ${to}. Never leave an item in ${from}.\n` +
+  `- Inside the texts use ' for quotes, never " or ” (they would break the JSON).`;
 
 /** Strict JSON schema: exactly the keys "1".."n", each a string. Ollama constrains the output to it. */
 export const schemaFor = (n) => {
@@ -90,62 +91,135 @@ export const schemaFor = (n) => {
   return { type: 'object', properties: Object.fromEntries(keys.map((k) => [k, { type: 'string' }])), required: keys, additionalProperties: false };
 };
 
-/** POST JSON with node:http so a Host header can be set (Ollama's DNS-rebinding guard may require it). */
-export function postJson(url, body, { headers = {}, signal, timeoutMs = 240_000 } = {}) {
+/** Output that ends in the same short piece over and over ("3: 3: 3: …"): the model is stuck and will not stop. */
+export const isLooping = (s) => /(.{1,24}?)\1{9,}$/su.test(s.slice(-400));
+
+/**
+ * Streams one Ollama /api/chat call (node:http, so a Host header can be set for Ollama's DNS-rebinding guard).
+ * Resolves with the generated text; stops early, with `looped: true`, when the model starts repeating itself.
+ */
+export function chatStream(url, body, { headers = {}, signal, timeoutMs = 240_000 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const data = Buffer.from(JSON.stringify(body));
+    const data = Buffer.from(JSON.stringify({ ...body, stream: true }));
+    let settled = false;
+    const done = (fn, v) => { if (!settled) { settled = true; fn(v); } };
     const req = (u.protocol === 'https:' ? https : http).request(u, {
       method: 'POST', signal, timeout: timeoutMs,
       headers: { 'content-type': 'application/json', 'content-length': data.length, ...headers },
     }, (res) => {
-      let text = '';
+      const status = res.statusCode ?? 0;
+      let buf = '', content = '', raw = '';
       res.setEncoding('utf8');
-      res.on('data', (d) => (text += d));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
-      res.on('error', reject);
+      res.on('data', (d) => {
+        if (status !== 200) { raw += d; return; }
+        buf += d;
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+          try { content += JSON.parse(line).message?.content ?? ''; } catch {}
+        }
+        if (isLooping(content)) { done(resolve, { status, content, looped: true }); req.destroy(); }
+      });
+      res.on('end', () => done(resolve, { status, content, raw }));
+      res.on('error', (e) => done(reject, e));
     });
     req.on('timeout', () => req.destroy(new ApiError(504, 'timeout')));
-    req.on('error', (e) => reject(signal?.aborted ? new ApiError(499, 'cancelled') : e instanceof ApiError ? e : new ApiError(502, 'llm-unreachable', e.message)));
+    req.on('error', (e) => done(reject, signal?.aborted ? new ApiError(499, 'cancelled') : e instanceof ApiError ? e : new ApiError(502, 'llm-unreachable', e.message)));
     req.end(data);
   });
 }
 
 /**
- * A translate function for one batch: (texts, context, signal) -> translated texts (same length, same order).
- * `post` is injectable for tests.
+ * Every complete `"n": "text"` pair in a model reply, even when the JSON as a whole is broken (a model that closes
+ * a string with a curly quote, or got cut off). Returns { "1": "…", … }.
  */
-export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, post = postJson }) {
+export function salvage(content) {
+  try { const o = JSON.parse(content); if (o && typeof o === 'object') return o; } catch {}
+  const out = {};
+  for (const m of content.matchAll(/"(\d+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
+    try { out[m[1]] = JSON.parse(`"${m[2]}"`); } catch {}
+  }
+  return out;
+}
+
+/**
+ * A translate function for one batch: (texts, context, signal) -> translated texts (same length, same order).
+ * Never fails on a bad answer: items the model got wrong are retried in smaller batches, then one by one as plain
+ * text, and as a last resort keep their source text. Network / model-missing problems still throw.
+ * `chat` is injectable for tests.
+ */
+export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = chatStream }) {
   const url = `${baseUrl.replace(/\/+$/, '')}/api/chat`;
   const headers = hostHeader ? { host: hostHeader } : {};
-  const sys = systemPrompt(languageName(from), languageName(to));
-  const once = async (texts, context, signal, extra = '') => {
-    const translate = Object.fromEntries(texts.map((t, i) => [String(i + 1), t]));
-    const res = await post(url, {
-      model, stream: false, keep_alive: '15m', format: schemaFor(texts.length),
-      options: { temperature: 0.2, num_ctx: 4096 },
-      messages: [{ role: 'system', content: sys + extra }, { role: 'user', content: JSON.stringify({ context, translate }) }],
-    }, { headers, signal });
-    if (res.status === 404) throw new ApiError(502, 'llm-model-missing', res.text.slice(0, 200));
-    if (res.status < 200 || res.status >= 300) throw new ApiError(502, 'llm-failed', `${res.status} ${res.text.slice(0, 200)}`);
-    let obj;
-    try { obj = JSON.parse(JSON.parse(res.text).message.content); } catch { throw new ApiError(502, 'llm-bad-response'); }
-    return texts.map((src, i) => {
-      const v = obj?.[String(i + 1)];
+  const fromName = languageName(from), toName = languageName(to);
+  const sys = systemPrompt(fromName, toName);
+
+  const ask = async (body, signal) => {
+    const res = await chat(url, { model, keep_alive: '15m', ...body }, { headers, signal });
+    if (res.status === 404) throw new ApiError(502, 'llm-model-missing', String(res.raw ?? '').slice(0, 200));
+    if (res.status < 200 || res.status >= 300) throw new ApiError(502, 'llm-failed', `${res.status} ${String(res.raw ?? '').slice(0, 200)}`);
+    return res.content;
+  };
+
+  /** One JSON call; null for every item that did not come back usable. */
+  const batch = async (texts, context, signal, extra = '') => {
+    const chars = texts.reduce((n, t) => n + t.length, 0);
+    const content = await ask({
+      format: schemaFor(texts.length),
+      // A generous budget for the real answer; a runaway model is cut off long before the context fills up.
+      options: { temperature: 0.2, num_ctx: 4096, num_predict: Math.min(2048, 64 + 16 * texts.length + 2 * chars) },
+      messages: [{ role: 'system', content: sys + extra },
+        { role: 'user', content: JSON.stringify({ context, translate: Object.fromEntries(texts.map((t, i) => [String(i + 1), t])) }) }],
+    }, signal);
+    const obj = salvage(content);
+    return texts.map((_, i) => {
+      const v = obj[String(i + 1)];
       const t = typeof v === 'string' ? clean(v) : '';
-      return t || src;
+      return t && !isLooping(t) ? t : null;
     });
   };
-  return async (texts, context, signal) => {
-    const out = await once(texts, context, signal);
-    // Small models sometimes just copy the input back. One retry with a firmer instruction, then accept.
-    const copied = out.filter((t, i) => norm(t) === norm(texts[i]) && /\p{L}{3}/u.test(t)).length;
-    if (copied * 2 > texts.length) return once(texts, context, signal, `\nIMPORTANT: your previous answer was still in ${languageName(from)}. Answer in ${languageName(to)} only.`);
+
+  /** Last resort for a single line: no JSON at all. */
+  const plain = async (text, context, signal) => {
+    const content = await ask({
+      options: { temperature: 0.2, num_ctx: 2048, num_predict: Math.min(400, 48 + 3 * text.length) },
+      messages: [
+        { role: 'system', content: `Translate the user's ${fromName} subtitle line into natural, spoken ${toName}. Reply with the translation only: no quotes, no notes, no alternatives.` },
+        { role: 'user', content: (context.length ? `(Earlier: ${context.join(' ')})\n\n` : '') + text },
+      ],
+    }, signal);
+    const t = clean(content.split('\n').map((l) => l.trim()).find(Boolean) ?? '').replace(/^["“'‘]+|["”'’]+$/g, '').trim();
+    return /\p{L}/u.test(t) && !isLooping(t) ? t : null;
+  };
+
+  const isCopy = (t, src) => norm(t) === norm(src) && /\p{L}{3}/u.test(t);
+  const copiedMost = (out, texts) => out.filter((t, i) => t && isCopy(t, texts[i])).length * 2 > texts.length;
+
+  const fill = async (texts, context, signal) => {
+    let out = await batch(texts, context, signal);
+    // Small models sometimes just copy the input back. One retry with a firmer instruction.
+    if (copiedMost(out, texts)) out = await batch(texts, context, signal, `\nIMPORTANT: your previous answer was still in ${fromName}. Answer in ${toName} only.`);
+    // A sentence of several words that came back unchanged was skipped, not translated ("Oh hoi Bello."): ask again.
+    // A lone name or tag ("Bello.", "[muziek]") may rightly stay as it is.
+    out = out.map((t, i) => (t && isCopy(t, texts[i]) && texts[i].trim().split(/\s+/).length >= 2 ? null : t));
+    const missing = out.map((t, i) => (t ? -1 : i)).filter((i) => i >= 0);
+    if (!missing.length) return out;
+    if (texts.length === 1) return [(await plain(texts[0], context, signal)) ?? texts[0]];
+    // Retry what is missing: as one smaller batch if part of the answer was fine, else split the batch in two.
+    const groups = missing.length < texts.length ? [missing]
+      : [missing.slice(0, Math.ceil(missing.length / 2)), missing.slice(Math.ceil(missing.length / 2))];
+    for (const g of groups) {
+      const sub = await fill(g.map((i) => texts[i]), context, signal);
+      g.forEach((i, k) => (out[i] = sub[k]));
+    }
     return out;
   };
+
+  return (texts, context, signal) => fill(texts, context, signal);
 }
 /** Removes leftovers some models append: zero-width characters, a stray `"}` and whatever follows it. */
-export const clean = (s) => s.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/["”]?\s*[}\]]+[\s\S]*$/, (m) => (/^\]/.test(m.trim()) ? m : '')).trim();
+export const clean = (s) => s.replace(/[​-‍﻿]/g, '').replace(/["”]?\s*[}\]]+[\s\S]*$/, (m) => (/^\]/.test(m.trim()) ? m : '')).trim();
 const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** Quick reachability check for /api/health. */

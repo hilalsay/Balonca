@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createHandler } from './lib.mjs';
 import {
-  batches, clean, createTranslateHandler, lane, ollamaTranslator, parseRequest, schemaFor, toUnits,
+  batches, clean, createTranslateHandler, isLooping, lane, ollamaTranslator, parseRequest, salvage, schemaFor, toUnits,
 } from './translate.mjs';
 
 const cue = (start, end, text) => ({ start, end, text });
@@ -56,37 +56,87 @@ describe('batches, schema, clean', () => {
 });
 
 describe('ollamaTranslator', () => {
-  const reply = (obj) => ({ status: 200, text: JSON.stringify({ message: { content: JSON.stringify(obj) } }) });
-  it('sends numbered items with a schema and the host header, maps answers back in order', async () => {
+  const ok = (content) => ({ status: 200, content });
+  const reply = (obj) => ok(JSON.stringify(obj));
+  const make = (chat, to = 'tr') => ollamaTranslator({ baseUrl: 'http://h:1/', model: 'm', hostHeader: '127.0.0.1', from: 'nl', to, chat });
+
+  it('sends numbered items with a schema, an output cap and the host header, maps answers back in order', async () => {
     let sent;
-    const post = async (url, body, opts) => { sent = { url, body, opts }; return reply({ 1: 'Merhaba.', 2: 'Nasılsın?' }); };
-    const tr = ollamaTranslator({ baseUrl: 'http://h:1/', model: 'm', hostHeader: '127.0.0.1', from: 'nl', to: 'tr', post });
+    const tr = make(async (url, body, opts) => { sent = { url, body, opts }; return reply({ 1: 'Merhaba.', 2: 'Nasılsın?' }); });
     expect(await tr(['Hoi.', 'Hoe gaat het?'], ['eerder'], undefined)).toEqual(['Merhaba.', 'Nasılsın?']);
     expect(sent.url).toBe('http://h:1/api/chat');
     expect(sent.opts.headers).toEqual({ host: '127.0.0.1' });
     expect(sent.body.format.required).toEqual(['1', '2']);
+    expect(sent.body.options.num_predict).toBeGreaterThan(50);
+    expect(sent.body.options.num_predict).toBeLessThanOrEqual(2048);
     expect(sent.body.messages[0].content).toContain('from Dutch into Turkish');
     expect(JSON.parse(sent.body.messages[1].content)).toEqual({ context: ['eerder'], translate: { 1: 'Hoi.', 2: 'Hoe gaat het?' } });
   });
-  it('falls back to the source text for an empty answer', async () => {
-    const tr = ollamaTranslator({ baseUrl: 'http://h', model: 'm', from: 'nl', to: 'en', post: async () => reply({ 1: 'Hi.', 2: ' ' }) });
-    expect(await tr(['Hoi.', 'Dag.'], [], undefined)).toEqual(['Hi.', 'Dag.']);
+
+  it('recovers from the real failure: a curly quote ends the last item and the model loops', async () => {
+    // What gemma3 actually produced for the Charlie video (see translate.mjs isLooping / salvage).
+    const broken = '{"1":"Hi Charlie.","2":"What are you doing?","3":"I don’t, but treasures are usually buried.”}​ 3: 3: 3: 3: 3: 3: 3: 3: 3: 3: 3:';
+    const calls = [];
+    const tr = make(async (_u, body) => {
+      calls.push(body.format ? `json:${body.format.required.length}` : 'plain');
+      return calls.length === 1 ? ok(broken) : reply({ 1: 'I don’t know, but treasures are usually buried.' });
+    }, 'en');
+    expect(await tr(['Hoi Charlie.', 'Wat ben je aan het doen?', 'Weet ik niet, maar schatten zijn meestal begraven.'], [], undefined))
+      .toEqual(['Hi Charlie.', 'What are you doing?', 'I don’t know, but treasures are usually buried.']);
+    expect(calls).toEqual(['json:3', 'json:1']); // only the broken item was asked again
   });
+
+  it('splits a batch that came back unusable, then falls back to plain text, then to the source', async () => {
+    const calls = [];
+    const tr = make(async (_u, body) => {
+      const n = body.format?.required.length;
+      calls.push(n ? `json:${n}` : 'plain');
+      if (n) return ok('{');                       // JSON mode never works here
+      const line = body.messages[1].content;
+      return ok(line.includes('Dag') ? '' : '"Merhaba."\nNote: informal');
+    });
+    expect(await tr(['Hoi.', 'Dag.'], [], undefined)).toEqual(['Merhaba.', 'Dag.']);
+    expect(calls).toEqual(['json:2', 'json:1', 'plain', 'json:1', 'plain']);
+  });
+
   it('retries once when the model copied the input', async () => {
     let calls = 0;
-    const post = async (_u, body) => {
+    const tr = make(async (_u, body) => {
       calls++;
-      return calls === 1 ? reply({ 1: 'Ik graaf.', 2: 'Een schat.' }) : (expect(body.messages[0].content).toContain('IMPORTANT'), reply({ 1: 'Kazıyorum.', 2: 'Bir hazine.' }));
-    };
-    const tr = ollamaTranslator({ baseUrl: 'http://h', model: 'm', from: 'nl', to: 'tr', post });
+      if (calls === 1) return reply({ 1: 'Ik graaf.', 2: 'Een schat.' });
+      expect(body.messages[0].content).toContain('IMPORTANT');
+      return reply({ 1: 'Kazıyorum.', 2: 'Bir hazine.' });
+    });
     expect(await tr(['Ik graaf.', 'Een schat.'], [], undefined)).toEqual(['Kazıyorum.', 'Bir hazine.']);
     expect(calls).toBe(2);
   });
-  it('reports a missing model and a broken reply', async () => {
-    const missing = ollamaTranslator({ baseUrl: 'http://h', model: 'm', from: 'nl', to: 'tr', post: async () => ({ status: 404, text: 'model not found' }) });
-    await expect(missing(['a'], [], undefined)).rejects.toMatchObject({ code: 'llm-model-missing' });
-    const broken = ollamaTranslator({ baseUrl: 'http://h', model: 'm', from: 'nl', to: 'tr', post: async () => ({ status: 200, text: '{' }) });
-    await expect(broken(['a'], [], undefined)).rejects.toMatchObject({ code: 'llm-bad-response' });
+
+  it('asks again for a multi-word sentence that came back unchanged, but accepts a lone name', async () => {
+    const calls = [];
+    const tr = make(async (_u, body) => {
+      calls.push(body.format ? `json:${body.format.required.length}` : 'plain');
+      return calls.length === 1 ? reply({ 1: 'Bello.', 2: 'Oh hoi Bello.', 3: 'Ne yapıyorsun?', 4: 'Evet.' }) : reply({ 1: 'Oh merhaba Bello.' });
+    });
+    expect(await tr(['Bello.', 'Oh hoi Bello.', 'Wat doe je?', 'Ja.'], [], undefined)).toEqual(['Bello.', 'Oh merhaba Bello.', 'Ne yapıyorsun?', 'Evet.']);
+    expect(calls).toEqual(['json:4', 'json:1']);
+  });
+
+  it('still reports a missing model or a failing server', async () => {
+    await expect(make(async () => ({ status: 404, content: '', raw: 'model not found' }))(['a'], [], undefined)).rejects.toMatchObject({ code: 'llm-model-missing' });
+    await expect(make(async () => ({ status: 500, content: '', raw: 'boom' }))(['a'], [], undefined)).rejects.toMatchObject({ code: 'llm-failed' });
+  });
+});
+
+describe('isLooping / salvage', () => {
+  it('spots a stuck model but not normal text', () => {
+    expect(isLooping('"8":"buried.”} 3: 3: 3: 3: 3: 3: 3: 3: 3: 3: 3:')).toBe(true);
+    expect(isLooping('aaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBe(true);
+    expect(isLooping('Ha ha, ik heet Charlie. Wat ben je aan het doen?')).toBe(false);
+  });
+  it('keeps every complete pair from broken JSON', () => {
+    expect(salvage('{"1":"Hi \\"you\\".","2":"Yes.","3":"cut off')).toEqual({ 1: 'Hi "you".', 2: 'Yes.' });
+    expect(salvage('{"1":"a"}')).toEqual({ 1: 'a' });
+    expect(salvage('nothing')).toEqual({});
   });
 });
 

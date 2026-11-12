@@ -6,7 +6,11 @@ const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '127.0.0.1'; // keep it behind a reverse proxy
 // By default the yt-dlp installed on this machine (found on PATH) is used. YTDLP_BIN only overrides that.
 const bin = process.env.YTDLP_BIN || 'yt-dlp';
-const run = (args, opts) => runYtDlp(args, { ...opts, bin });
+// YouTube needs a JavaScript runtime to unlock many videos ("This video is not available" without one).
+// yt-dlp only looks for deno by default, so hand it the Node that runs this service. YTDLP_JS_RUNTIMES=off disables.
+const js = process.env.YTDLP_JS_RUNTIMES ?? `node:${process.execPath}`;
+const extra = js === 'off' ? [] : ['--js-runtimes', js];
+const run = (args, opts) => runYtDlp(args[0] === '--version' ? args : [...extra, ...args], { ...opts, bin });
 
 const version = await checkYtDlp(run, bin);
 console.log(version ? `using system ${bin} ${version}` : `WARNING: "${bin}" not found. Install yt-dlp on this machine (see README); requests will fail until then.`);
