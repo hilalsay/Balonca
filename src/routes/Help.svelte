@@ -1,17 +1,12 @@
 <script lang="ts">
   import { t } from '../lib/i18n/index.svelte';
-  import { toast } from '../lib/toast.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
 
   const faq = [1, 2, 3, 4, 5, 6] as const;
-  const CMD = 'yt-dlp --write-auto-subs --sub-langs nl --sub-format json3 --skip-download "https://youtu.be/VIDEO_ID"';
   const keys: [string, MessageKey][] = [
     ['Space', 'kbd.play'], ['← →', 'kbd.line'], ['R', 'kbd.loop'], ['F', 'kbd.full'], ['W', 'kbd.word'],
   ];
 
-  async function copy() {
-    try { await navigator.clipboard.writeText(CMD); toast('✓', 'success', 1500); } catch {}
-  }
 </script>
 
 <div class="help">
@@ -24,13 +19,6 @@
         <summary>{t(`help.q${n}` as MessageKey)}</summary>
         <div class="answer">
           <p>{t(`help.a${n}` as MessageKey)}</p>
-          {#if n === 3}
-            <div class="code">
-              <code>{CMD}</code>
-              <button onclick={copy} aria-label="Copy">⧉</button>
-            </div>
-            <p>{t('help.a3b')}</p>
-          {/if}
         </div>
       </details>
     {/each}
@@ -59,9 +47,6 @@
   summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; flex: none; }
   details[open] > summary::before { transform: rotate(90deg); }
   .answer p { margin: 0 0 var(--space-3); }
-  .code { display: flex; gap: var(--space-2); align-items: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
-  code { flex: 1; min-width: 0; font: 0.85rem ui-monospace, monospace; overflow-wrap: anywhere; }
-  .code button { min-width: 44px; padding: 0; }
   .keys { margin: 0 0 var(--space-3); display: grid; gap: 8px; }
   .keys div { display: flex; gap: var(--space-3); align-items: baseline; }
   dt { min-width: 5.5rem; } dd { margin: 0; color: var(--muted); }

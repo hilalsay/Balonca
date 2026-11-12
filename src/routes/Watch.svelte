@@ -2,7 +2,6 @@
   import { onMount, untrack } from 'svelte';
   import VideoStage from '../components/VideoStage.svelte';
   import Transcript from '../components/Transcript.svelte';
-  import TracksPanel from '../components/TracksPanel.svelte';
   import SettingsPanel from '../components/SettingsPanel.svelte';
   import WordsMini from '../components/WordsMini.svelte';
   import Tabs from '../components/Tabs.svelte';
@@ -15,7 +14,7 @@
   import { loadExample } from '../lib/example';
   import { t } from '../lib/i18n/index.svelte';
 
-  type TabId = 'transcript' | 'words' | 'tracks' | 'settings';
+  type TabId = 'transcript' | 'words' | 'settings';
   let tab = $state<TabId>('transcript');
   let stage: VideoStage;
   let url = $state('');
@@ -24,7 +23,6 @@
   const tabs = $derived<{ id: TabId; label: string }[]>([
     { id: 'transcript', label: t('tab.transcript') },
     { id: 'words', label: t('tab.words') },
-    { id: 'tracks', label: t('tab.tracks') },
     { id: 'settings', label: t('tab.settings') },
   ]);
 
@@ -95,7 +93,6 @@
       {#snippet panel(id)}
         {#if id === 'transcript'}<div class="transcript"><Transcript /></div>
         {:else if id === 'words'}<WordsMini />
-        {:else if id === 'tracks'}<TracksPanel />
         {:else}<SettingsPanel />{/if}
       {/snippet}
     </Tabs>

@@ -4,8 +4,6 @@ import { t } from './i18n/index.svelte';
 import { toast } from './toast.svelte';
 import type { MessageKey } from './i18n/tr';
 
-const MAX_BYTES = 30 * 1024 * 1024;
-
 /** Adds one subtitle (file contents or pasted text) to the current video, reporting the outcome to the user. */
 export function ingestText(text: string, name: string, lang?: string): boolean {
   try {
@@ -19,13 +17,5 @@ export function ingestText(text: string, name: string, lang?: string): boolean {
     if (e instanceof SubtitleParseError) toast(t(`parse.${e.code}` as MessageKey, { name }), 'error', 8000);
     else toast(t('parse.unknown-format', { name }), 'error', 8000);
     return false;
-  }
-}
-
-export async function ingestFiles(files: Iterable<File>): Promise<void> {
-  if (!app.vid) { toast(t('tracks.needVideo'), 'error'); return; }
-  for (const f of files) {
-    if (f.size > MAX_BYTES) { toast(t('parse.binary', { name: f.name }), 'error'); continue; }
-    ingestText(await f.text(), f.name);
   }
 }

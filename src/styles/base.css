@@ -25,7 +25,7 @@ button:hover { transform: translateY(-1px); border-color: var(--accent); }
 button:active { transform: translateY(0); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
-input[type='text'], input[type='url'], input:not([type]), select, textarea {
+input[type='text'], input[type='url'], input[type='search'], input:not([type]), select, textarea {
   min-height: 44px;
   padding: 0 var(--space-3);
   background: var(--surface);

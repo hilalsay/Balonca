@@ -104,9 +104,9 @@ export const pickPrompt = (from) =>
 
 /** Step 2: translate the senses, and say what the word means in the sentence. */
 export const glossPrompt = (from, to) =>
-  `You translate English dictionary senses of a ${from} word into ${to} for a language learner. You also get the sentence the word was found in.\n` +
+  `You translate English dictionary senses of a ${from} word into ${to} for a language learner.\n` +
   `Reply with JSON {"t": {...}}: every numbered sense translated into a short, natural ${to} meaning (1 to 8 words), under the same number. ` +
-  `Translate the meaning of the sense, not the sentence; do not explain or add anything. Write only ${to}.`;
+  `Translate only the English sense itself; do not explain or add anything. Write only ${to}.`;
 
 /** No dictionary entry: the model alone, in English first (translated afterwards like dictionary senses). */
 export const alonePrompt = (from) =>
@@ -176,7 +176,8 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
   let t = {};
   if (to !== 'en') {
     const g = await ask(glossPrompt(fromName, toName),
-      { word, sentence: ctx, senses: Object.fromEntries(senses.map((s, i) => [String(i + 1), s.gloss])) },
+      // No sentence here: given one, a small model translates the sentence instead of the sense.
+      { word, senses: Object.fromEntries(senses.map((s, i) => [String(i + 1), `(${s.pos}) ${s.gloss}`])) },
       glossSchema(senses.length), 80 + senses.length * 40);
     t = g.t ?? {};
   }
@@ -203,7 +204,7 @@ export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl } = {}
   const cache = diskCache(cacheDir);
   return async function defineRoute(req, res) {
     const q = parseDefineRequest(await readBody(req, 20_000));
-    const key = createHash('sha256').update(JSON.stringify(['v2', llm.model, q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
+    const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
     if (!out) {
       const ctl = new AbortController();

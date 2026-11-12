@@ -10,9 +10,8 @@ a plain static site.
 Videos play through YouTube's official IFrame player only; nothing is downloaded or re-hosted.
 
 ## Features
-- Several subtitle tracks at once: visibility, colour, editable name, language code, ±0.2 s sync offset
-- Formats: `.srt`, `.vtt`, YouTube `.json3`, simple JSON `[{start,end,text}]`; drag & drop or paste text
-- Language auto-detected from the file name (`video.nl.srt`); YouTube auto-caption rolling duplicates merged
+- Several subtitle tracks at once (the video's own + translations): show/hide and ±0.2 s sync in Settings
+- Subtitles come from YouTube by themselves (parsers for `.json3`, `.vtt`, `.srt`); auto-caption rolling duplicates merged
 - Click-to-save words (per language), saved words marked everywhere, jump back to the moment, CSV export
 - Flashcard review with simple spaced repetition (again / good / easy), progress and counts
 - Transcript synced to playback, virtualized for long videos; prev/next line, repeat line, speed, fullscreen
@@ -23,7 +22,6 @@ Videos play through YouTube's official IFrame player only; nothing is downloaded
   is translated
 - **Word meanings**: 📖 next to a saved word shows its meaning in that sentence, the dictionary form, other meanings
   and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the local model)
-- Optional in-browser translation helper (local model on the server, or your own Anthropic API key)
 - Turkish and English UI, light / dark / auto theme, mobile-first layout
 
 Keyboard: `Space` play/pause · `←` `→` previous/next line · `R` repeat line · `F` fullscreen ·
@@ -202,8 +200,8 @@ features (and YouTube embedding behaviour) are more reliable on a secure origin.
 
 ## Security notes
 - Subtitle text is parsed to plain text and rendered through Svelte's escaping; there is no `innerHTML` or `{@html}`.
-- Strict CSP (meta tag and nginx header): scripts only from self and youtube.com, API calls only to self and
-  api.anthropic.com, no inline styles or scripts.
+- Strict CSP (meta tag and nginx header): scripts only from self and youtube.com, API calls only to self,
+  no inline styles or scripts.
 - The service only listens on 127.0.0.1 behind nginx. Translation requests are size-limited (1 MB, 5000 lines),
   validated, rate-limited per client and cancelled when the browser disconnects.
 - Imported backups and settings are re-validated field by field; CSV export neutralises spreadsheet formulas.

@@ -3,6 +3,16 @@
   import { t } from '../lib/i18n/index.svelte';
   import { app } from '../lib/state.svelte';
   import { watchUrl } from '../lib/router.svelte';
+  import { parseVideoId } from '../lib/player/youtube';
+
+  let url = $state('');
+  let bad = $state(false);
+  function go(e: SubmitEvent) {
+    e.preventDefault();
+    const id = parseVideoId(url);
+    bad = !id;
+    if (id) location.hash = watchUrl(id);
+  }
   const steps = [
     ['home.s1.t', 'home.s1.d'],
     ['home.s2.t', 'home.s2.d'],
@@ -14,7 +24,12 @@
   <Mascot size={110} float />
   <h1>{t('home.title')}</h1>
   <p class="muted">{t('home.lead')}</p>
-  <a class="cta" href="#/watch">{t('home.cta')}</a>
+  <form class="go" onsubmit={go}>
+    <label class="sr-only" for="home-url">{t('watch.url.label')}</label>
+    <input id="home-url" type="url" inputmode="url" bind:value={url} placeholder={t('watch.url.placeholder')} aria-invalid={bad} autocomplete="off" />
+    <button class="primary" type="submit">{t('home.cta')}</button>
+  </form>
+  {#if bad}<p class="error" role="alert">{t('watch.badlink')}</p>{/if}
   {#if app.vid}
     <a class="resume" href={watchUrl(app.vid)}>
       <img src={`https://i.ytimg.com/vi/${app.vid}/mqdefault.jpg`} alt="" width="96" height="54" loading="lazy" />
@@ -42,10 +57,11 @@
   .hero { display: grid; justify-items: center; text-align: center; gap: var(--space-3); padding: var(--space-6) 0 var(--space-5); }
   h1 { font-size: clamp(2rem, 7vw, 3.2rem); }
   .hero p { max-width: 36rem; margin: 0; font-size: 1.1rem; }
-  .cta { display: inline-flex; align-items: center; min-height: 48px; padding: 0 28px; margin-top: var(--space-2);
-    background: var(--accent); color: var(--accent-ink); border-radius: 99px; font-weight: 800; text-decoration: none;
-    box-shadow: var(--shadow-lg); transition: transform 0.15s ease; }
-  .cta:hover { transform: translateY(-2px); }
+  .go { display: flex; gap: var(--space-2); width: min(100%, 560px); margin-top: var(--space-2); }
+  .go input { flex: 1; min-width: 0; min-height: 52px; font-size: 1rem; border-radius: 99px; padding: 0 20px; }
+  .go button { min-height: 52px; padding: 0 24px; border-radius: 99px; font-weight: 800; box-shadow: var(--shadow-lg); }
+  .error { color: var(--danger); font-weight: 700; }
+  @media (max-width: 440px) { .go { flex-direction: column; } }
   .resume { display: inline-flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); padding: 6px 16px 6px 6px; border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); text-decoration: none; font-weight: 700; }
   .resume:hover { border-color: var(--accent); }
   .resume img { border-radius: 8px; object-fit: cover; }

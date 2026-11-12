@@ -6,6 +6,7 @@
   import { langName } from '../lib/languages';
   import { i18n } from '../lib/i18n/index.svelte';
   import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
+  import SubtitleList from './SubtitleList.svelte';
 
   const translateChoices = ['ask', ...AUTO_LANGS] as const;
 
@@ -22,6 +23,11 @@
 </script>
 
 <div class="panel">
+  <section>
+    <h3>{t('subs.title')}</h3>
+    <SubtitleList />
+  </section>
+
   <section>
     <h3>{t('settings.subtitles')}</h3>
     <div class="preview {app.settings.subStyle}" style:--sub-size="{app.settings.subSize}px" style:--sub-bg={app.settings.subBg / 100} style:--sub-scale="0.8" aria-label={t('settings.preview')}>
