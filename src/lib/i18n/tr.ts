@@ -56,6 +56,8 @@ export const tr = {
   'tab.transcript': 'Transkript',
   'tab.words': 'Kelimeler',
   'tab.settings': 'Ayarlar',
+  'panel.expand': 'Paneli tam ekran aç',
+  'panel.collapse': 'Paneli küçült, videoya dön',
 
   'transcript.empty': 'Altyazı bekleniyor 🫧 Video açıldığında YouTube’dan kendiliğinden gelir.',
   'transcript.line': 'Bu satıra git: {time}',

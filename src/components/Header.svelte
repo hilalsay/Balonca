@@ -24,7 +24,7 @@
   const themeIcon = { auto: '◐', light: '☀', dark: '☾' } as const;
 </script>
 
-<header bind:this={el}>
+<header bind:this={el} class:on-watch={router.route === 'watch'}>
   <a class="logo" href="#/" aria-label="Balonca"><Mascot size={30} /><span>Balonca</span></a>
   <nav aria-label="Main">
     {#each links as [route, key]}
@@ -65,6 +65,8 @@
     .logo { font-size: 18px; }
     .icon { min-height: 40px; min-width: 40px; }
   }
+  /* Phones: the player gets the whole screen; the bottom tab bar has the navigation. */
+  @media (max-width: 760px) and (orientation: portrait) { header.on-watch { display: none; } }
   @media (max-width: 760px) and (orientation: landscape) {
     nav { display: flex; margin-left: auto; }
     nav a { padding: 8px 10px; font-size: 0.9rem; }

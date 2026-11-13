@@ -58,6 +58,8 @@ export const en: Record<MessageKey, string> = {
   'tab.transcript': 'Transcript',
   'tab.words': 'Words',
   'tab.settings': 'Settings',
+  'panel.expand': 'Open the panel full screen',
+  'panel.collapse': 'Shrink the panel, back to the video',
 
   'transcript.empty': 'Waiting for subtitles 🫧 They arrive from YouTube by themselves when a video opens.',
   'transcript.line': 'Go to this line: {time}',

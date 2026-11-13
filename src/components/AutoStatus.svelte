@@ -96,11 +96,16 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 760px) {
     .auto.only-more, .ask:not(.first) { display: none; } /* phones: offered under Settings → Subtitles instead */
-    .auto { padding: 6px 10px; gap: 6px; border-radius: 12px; }
+    .auto { padding: 6px 10px; gap: 6px; border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; }
+    ul { flex: 1 1 0; min-width: 0; }
+    .ask { flex-basis: 100%; }
+    .stop { min-height: 32px; padding: 0 12px; font-size: 0.85rem; }
+    progress { min-width: 40px; }
     li { font-size: 0.85rem; }
     .ask { gap: 6px 8px; }
     .q, .ask.first .q { font-size: 0.9rem; }
     .langs button { min-height: 36px; padding: 0 14px; }
-    .remember { min-height: 28px; font-size: 0.8rem; }
+    .remember { display: none; } /* phones: the same choice is one tap away under Settings → translation language */
+    .ask.first .langs button { min-height: 34px; padding: 0 14px; }
   }
 </style>
