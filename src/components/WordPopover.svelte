@@ -125,7 +125,7 @@
         <p class="ans" lang={to}>{meaning.inContext}</p>
         <p class="meta">
           {#if best.pos}<span class="pos">{pos(best.pos)}</span>{/if}
-          {#if best.en && best.en !== meaning.inContext}<span class="en" lang="en">{best.en}</span>{/if}
+          {#if best.en && best.en !== meaning.inContext}<span class="en"><span class="dl">{t('dict.line')}</span> <span lang="en">{best.en}</span></span>{/if}
         </p>
         {#if others.length}<p class="others"><span class="muted">{t('pop.also')}</span> <span lang={to}>{others.map((s) => s.meaning).join(' · ')}</span></p>{/if}
         {#if meaning.temporary}<p class="warn">{t('pop.temporary')} <button class="link" onclick={() => { if (w && to) memo.delete(memoKey(w, to)); retry++; }}>{t('meaning.retry')}</button></p>
@@ -185,6 +185,7 @@
   .meta { margin: 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 0.85rem; }
   .pos { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
   .en { font-style: italic; color: var(--muted); }
+  .dl { font-style: normal; }
   .others { margin: 0; font-size: 0.88rem; }
   .warn { margin: 0; font-size: 0.8rem; color: var(--danger); }
   .link { all: unset; cursor: pointer; font-size: 0.82rem; color: var(--accent); text-decoration: underline; }

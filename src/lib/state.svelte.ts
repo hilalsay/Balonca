@@ -188,6 +188,20 @@ class AppState {
     return text;
   }
 
+  /** The learner's own correction of a word's meaning and/or the sentence translation in `lang` (empty = leave as is). */
+  fixWord(id: string, lang: string, fix: { meaning?: string; trans?: string }) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w) return;
+    const meaning = fix.meaning?.trim(), trans = fix.trans?.trim();
+    if (meaning) {
+      const m = w.meanings?.[lang];
+      w.meanings = { ...(w.meanings ?? {}), [lang]: m ? { ...m, inContext: meaning, edited: true }
+        : { lemma: w.w, inContext: meaning, senses: [], source: 'dictionary', at: Date.now(), edited: true } };
+    }
+    if (trans) w.trans = [...w.trans.filter((x) => x.lang !== lang), { lang, text: trans, edited: true }];
+    if (this.db && (meaning || trans)) void putWord(this.db, $state.snapshot(w) as SavedWord);
+  }
+
   /** Stores a word's meaning in one language (shown again instantly, kept in backups). */
   setMeaning(id: string, to: string, meaning: WordMeaning) {
     const w = this.words.find((x) => x.id === id);

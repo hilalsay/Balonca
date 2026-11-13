@@ -67,6 +67,8 @@
           {#if meaning}
             <div class="label muted">{t('meaning.here')}</div>
             <p class="meaning">{meaning.inContext}{#if meaning.lemma && meaning.lemma !== card.w}<span class="muted"> · {meaning.lemma}</span>{/if}</p>
+            {@const en = (meaning.senses.find((x) => x.best) ?? meaning.senses[0])?.en}
+            {#if en && en !== meaning.inContext && app.settings.meaningLang !== 'en'}<p class="dict muted"><span>{t('dict.line')}</span> <i lang="en">{en}</i></p>{/if}
           {/if}
         </div>
         <p class="ask">{t('review.ask')}</p>
@@ -102,6 +104,7 @@
   .meaning { margin: 0; font-weight: 800; color: var(--accent); font-size: 1.15rem; }
   mark { background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 0 4px; font-weight: 700; }
   .grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); width: min(100%, 30rem); }
+  .dict { margin: 0; font-size: 0.9rem; }
   .ask { margin: var(--space-2) 0 0; font-weight: 800; font-family: var(--font-display); }
   .grades button { display: grid; gap: 2px; justify-items: center; padding: var(--space-3) var(--space-2); min-height: 72px; }
   .grades small { opacity: 0.8; font-weight: 400; }

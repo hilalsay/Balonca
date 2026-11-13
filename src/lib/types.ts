@@ -24,7 +24,7 @@ export interface SavedWord {
   w: string; // normalized word
   lang: string;
   ctx: string; // sentence it was saved from
-  trans: { lang: string; text: string }[]; // the same moment in the other visible tracks (translations)
+  trans: { lang: string; text: string; edited?: boolean }[]; // the same moment in the other visible tracks (translations); edited: fixed by the learner
   vid?: string;
   t: number; // seconds into the video
   added: number; // epoch ms
@@ -43,6 +43,7 @@ export interface WordMeaning {
   senses: { head: string; pos: string; meaning: string; en?: string; example?: string; best?: boolean }[];
   source: 'dictionary' | 'ai'; // 'ai': no dictionary entry, the model guessed
   temporary?: boolean; // the dictionary could not be reached: a stopgap guess, never stored
+  edited?: boolean; // inContext was corrected by the learner
   at: number;
 }
 

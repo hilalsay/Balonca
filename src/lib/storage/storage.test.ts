@@ -97,6 +97,16 @@ describe('backup', () => {
     expect(b.tracks[0].cues).toHaveLength(1);
     expect(b.tracks[0].color).toBe('#a995ff');
   });
+  it('keeps the learner\'s own fixes (edited meaning and sentence translation)', () => {
+    const b = parseBackup(JSON.stringify({
+      app: 'balonca', version: 1,
+      words: [{ w: 'schat', lang: 'nl', ctx: 'x', trans: [{ lang: 'tr', text: 'Canım.', edited: true }, { lang: 'en', text: 'Hi', edited: 'yes' }],
+        meanings: { tr: { lemma: 'schat', inContext: 'hazine', senses: [], source: 'dictionary', at: 1, edited: true } } }],
+      tracks: [],
+    }));
+    expect(b.words[0].trans).toEqual([{ lang: 'tr', text: 'Canım.', edited: true }, { lang: 'en', text: 'Hi' }]);
+    expect(b.words[0].meanings?.tr.edited).toBe(true);
+  });
 });
 
 describe('legacy migration', () => {

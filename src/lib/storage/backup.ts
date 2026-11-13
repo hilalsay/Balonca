@@ -39,7 +39,7 @@ function cleanWord(x: any): SavedWord | null {
   return {
     id: `${x.lang}:${x.w}`, w: x.w, lang: x.lang, ctx: isStr(x.ctx) ? x.ctx : '',
     trans: Array.isArray(x.trans)
-      ? x.trans.filter((r: any) => r && isStr(r.lang) && isStr(r.text)).slice(0, 4).map((r: any) => ({ lang: r.lang, text: r.text.slice(0, 500) }))
+      ? x.trans.filter((r: any) => r && isStr(r.lang) && isStr(r.text)).slice(0, 4).map((r: any) => ({ lang: r.lang, text: r.text.slice(0, 500), ...(r.edited === true ? { edited: true } : {}) }))
       : [],
     vid: isStr(x.vid) ? x.vid : undefined, t: isNum(x.t) ? x.t : 0, added: isNum(x.added) ? x.added : Date.now(),
     reps: isNum(x.reps) ? x.reps : 0, ivl: isNum(x.ivl) ? x.ivl : 0, ease: isNum(x.ease) ? x.ease : 2.5,
@@ -56,7 +56,7 @@ function cleanMeanings(raw: any): SavedWord['meanings'] {
     if (!/^[a-z]{2,3}$/.test(to) || !m || !isStr(m.inContext) || !Array.isArray(m.senses)) continue;
     out[to] = {
       lemma: isStr(m.lemma) ? m.lemma.slice(0, 60) : '', inContext: m.inContext.slice(0, 200),
-      source: m.source === 'ai' ? 'ai' : 'dictionary', at: isNum(m.at) ? m.at : 0,
+      source: m.source === 'ai' ? 'ai' : 'dictionary', at: isNum(m.at) ? m.at : 0, ...(m.edited === true ? { edited: true } : {}),
       senses: m.senses.filter((s: any) => s && isStr(s.meaning)).slice(0, 10).map((s: any) => ({
         head: isStr(s.head) ? s.head.slice(0, 60) : '', pos: isStr(s.pos) ? s.pos.slice(0, 30) : '', meaning: s.meaning.slice(0, 200),
         ...(isStr(s.en) ? { en: s.en.slice(0, 200) } : {}), ...(isStr(s.example) ? { example: s.example.slice(0, 200) } : {}),
