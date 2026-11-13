@@ -8,6 +8,7 @@
   import { tour } from '../lib/tour.svelte';
   import { subAdjust } from '../lib/subadjust.svelte';
   import SubtitleList from './SubtitleList.svelte';
+  import ShowLang from './ShowLang.svelte';
 
   const translateChoices = ['ask', ...AUTO_LANGS] as const;
   const styles: SubStyle[] = ['box', 'outline', 'shadow', 'contrast'];
@@ -49,6 +50,8 @@
       </div>
     </section>
   {/if}
+
+  <section><ShowLang /></section>
 
   <section>
     {#each main as [key, label]}

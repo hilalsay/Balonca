@@ -5,6 +5,7 @@ import { openBalonca, loadSettings, saveSettings, loadWords, loadKnown, saveKnow
 import { parseSubtitles } from './subtitles';
 import { detectLangFromFilename } from './languages';
 import { makeWord, toggleWord, wordId } from './words/bags';
+import { lineAt, translateSentence } from './words/sentence';
 import { schedule, LEARNED_DAYS, type Grade } from './srs/scheduler';
 import { setLocale } from './i18n/index.svelte';
 import { loadExample, exampleFileUrl } from './example';
@@ -159,6 +160,32 @@ class AppState {
     this.words = list;
     if (this.db) void (added ? putWord(this.db, $state.snapshot(w) as SavedWord) : deleteWord(this.db, w.id));
     return added;
+  }
+
+  /** Adds (or replaces) the sentence's translation in one language. */
+  setTrans(id: string, lang: string, text: string) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w || !text) return;
+    w.trans = [...w.trans.filter((x) => x.lang !== lang), { lang, text }];
+    if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
+  }
+
+  /** The saved sentence in `lang` from the video's own subtitles (no server); stores and returns it when found. */
+  async transFromTracks(word: SavedWord, lang: string): Promise<string | null> {
+    if (!word.vid) return null;
+    const tracks = word.vid === this.vid ? this.tracks : this.db ? await loadTracks(this.db, word.vid) : [];
+    const text = lineAt(tracks as StoredTrack[], lang, word.t);
+    if (text) this.setTrans(word.id, lang, text);
+    return text;
+  }
+
+  /** The saved sentence in `lang`: from the video's subtitles if they have it, else translated by the server. */
+  async translateWordSentence(word: SavedWord, lang: string, signal?: AbortSignal): Promise<string> {
+    const local = await this.transFromTracks(word, lang);
+    if (local) return local;
+    const text = await translateSentence({ text: word.ctx, from: word.lang, to: lang, signal });
+    this.setTrans(word.id, lang, text);
+    return text;
   }
 
   /** Stores a word's meaning in one language (shown again instantly, kept in backups). */

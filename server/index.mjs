@@ -7,6 +7,7 @@ net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
 import { createTranslateHandler, ollamaStatus } from './translate.mjs';
 import { createDefineHandler } from './define.mjs';
+import { createSentenceHandler } from './sentence.mjs';
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '127.0.0.1'; // keep it behind a reverse proxy
@@ -38,6 +39,7 @@ const defineCacheDir = process.env.DEFINE_CACHE_DIR ?? new URL('../.cache/defini
 const handler = createHandler({
   translate: llmOn ? createTranslateHandler({ ...llm, cacheDir, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12) }) : null,
   define: llmOn ? createDefineHandler({ llm, cacheDir: defineCacheDir }) : null,
+  sentence: llmOn ? createSentenceHandler({ llm, cacheDir: defineCacheDir }) : null,
   llmStatus: llmOn ? () => ollamaStatus(llm) : null,
   run,
   ytdlpInstalled: Boolean(version),

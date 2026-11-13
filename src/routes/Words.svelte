@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ShowLang from '../components/ShowLang.svelte';
   import Mascot from '../components/Mascot.svelte';
   import Review from '../components/Review.svelte';
   import ConfirmButton from '../components/ConfirmButton.svelte';
@@ -74,6 +75,8 @@
       </div>
     {/if}
   </div>
+
+  {#if app.words.length}<ShowLang compact />{/if}
 
   {#if reviewing && lang}
     <Review {lang} onclose={() => (reviewing = false)} />

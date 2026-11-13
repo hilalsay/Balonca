@@ -63,7 +63,7 @@
         <div class="back" aria-live="polite">
           <div class="label muted">{t('review.context')}</div>
           <p class="sentence" lang={card.lang}>{#each parts as p}{#if p.isWord && p.key === card.w}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}</p>
-          {#each card.trans as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
+          {#each [...card.trans].sort((a, b) => Number(b.lang === app.settings.meaningLang) - Number(a.lang === app.settings.meaningLang)) as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
           {#if meaning}
             <div class="label muted">{t('meaning.here')}</div>
             <p class="meaning">{meaning.inContext}{#if meaning.lemma && meaning.lemma !== card.w}<span class="muted"> · {meaning.lemma}</span>{/if}</p>
