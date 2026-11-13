@@ -5,7 +5,7 @@ import net from 'node:net';
 // needs a little longer, which made about 1 in 10 lookups fail with ETIMEDOUT. Give a connection a fair chance.
 net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
-import { createTranslateHandler, ollamaStatus } from './translate.mjs';
+import { createTranslateHandler, ollamaStatus, parseModels } from './translate.mjs';
 import { createDefineHandler } from './define.mjs';
 import { createSentenceHandler } from './sentence.mjs';
 
@@ -27,6 +27,8 @@ const llm = {
   baseUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
   model: process.env.OLLAMA_MODEL ?? 'gemma3:latest',
   hostHeader: process.env.OLLAMA_HOST_HEADER ?? '',
+  // A stronger model for some target languages, e.g. OLLAMA_MODELS="tr=aya-expanse:8b"; others use OLLAMA_MODEL.
+  models: parseModels(process.env.OLLAMA_MODELS ?? ''),
 };
 const llmOn = llm.baseUrl !== 'off';
 if (llmOn) {

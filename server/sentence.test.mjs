@@ -26,3 +26,12 @@ test('translates one sentence and caches it', async () => {
   expect(b.body).toEqual({ text: 'Hi Charlie.' });
   expect(calls).toBe(1);
 });
+
+test('uses the stronger model configured for the target language', async () => {
+  const seen = [];
+  const chat = async (_u, body) => { seen.push(body.model); return { status: 200, content: '{"1": "Merhaba."}' }; };
+  const h = createSentenceHandler({ llm: { ...llm, models: { tr: 'big' } }, chat });
+  await h(req({ text: 'Hoi.', from: 'nl', to: 'tr' }), res());
+  await h(req({ text: 'Hoi.', from: 'nl', to: 'en' }), res());
+  expect(seen).toEqual(['big', 'm']);
+});

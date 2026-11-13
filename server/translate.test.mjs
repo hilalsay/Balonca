@@ -227,3 +227,13 @@ describe('POST /api/translate (streamed)', () => {
     await api.close();
   });
 });
+
+describe('parseModels / modelFor', () => {
+  it('reads "lang=model" pairs and falls back to the default model', async () => {
+    const { parseModels, modelFor } = await import('./translate.mjs');
+    const models = parseModels(' tr = aya-expanse:8b , bad, x=, EN=big ');
+    expect(models).toEqual({ tr: 'aya-expanse:8b', en: 'big' });
+    expect(modelFor({ model: 'gemma3', models }, 'tr')).toBe('aya-expanse:8b');
+    expect(modelFor({ model: 'gemma3', models }, 'nl')).toBe('gemma3');
+  });
+});

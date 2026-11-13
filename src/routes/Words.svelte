@@ -212,7 +212,7 @@
     .hero { padding: var(--space-4); gap: var(--space-3); }
     .hero .big { width: 100%; justify-content: center; }
     .tools { flex-wrap: nowrap; }
-    .tools input { flex: 1 1 auto; }
+    .tools input { flex: 1 1 0; width: 0; } /* no built-in text-box width: it would push a 320px screen sideways */
     .sort select { width: 8.5rem; }
   }
   .extra summary { cursor: pointer; font-weight: 800; min-height: 44px; display: flex; align-items: center; gap: 8px; list-style: none; }

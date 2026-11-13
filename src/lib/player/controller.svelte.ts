@@ -58,11 +58,12 @@ class PlayerController {
   iframe() { return this.yt?.getIframe() ?? null; }
   now() { return this.ready && this.yt ? this.yt.getCurrentTime() : 0; }
 
-  play() { this.yt?.playVideo(); }
-  pause() { this.yt?.pauseVideo(); }
+  // The YouTube object exists before its methods do (until onReady): calls in that window are skipped.
+  play() { if (typeof this.yt?.playVideo === 'function') this.yt.playVideo(); }
+  pause() { if (typeof this.yt?.pauseVideo === 'function') this.yt.pauseVideo(); }
   toggle() { if (this.ready) (this.playing ? this.pause() : this.play()); }
   seek(t: number) { if (this.ready) { this.yt?.seekTo(Math.max(0, t), true); this.time = t; } }
-  setRate(r: number) { this.rate = r; this.yt?.setPlaybackRate(r); }
+  setRate(r: number) { this.rate = r; if (typeof this.yt?.setPlaybackRate === 'function') this.yt.setPlaybackRate(r); }
 
   /** The first visible track drives the transcript, line navigation, repeat and auto-pause. */
   get primary() { return app.visibleTracks[0]; }

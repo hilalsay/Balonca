@@ -307,8 +307,20 @@ export function readBody(req, max = LIMITS.maxBody) {
  *   {"type":"done"}  or  {"type":"error","error":"code"}
  * Translated cues arrive in order, so the browser can show them while the rest is still being translated.
  */
+/** "tr=aya-expanse:8b,nl=other" -> { tr: 'aya-expanse:8b', nl: 'other' }: a stronger model for some target languages. */
+export function parseModels(spec = '') {
+  const out = {};
+  for (const part of String(spec).split(',')) {
+    const [lang, model] = part.split('=').map((x) => x?.trim());
+    if (lang && model && LANG_RE.test(lang)) out[lang.toLowerCase()] = model;
+  }
+  return out;
+}
+/** The model that writes text in `to`. */
+export const modelFor = (llm, to) => llm.models?.[to] ?? llm.model;
+
 export function createTranslateHandler({
-  baseUrl = 'http://127.0.0.1:11434', model = 'gemma3:latest', hostHeader = '', cacheDir = '',
+  baseUrl = 'http://127.0.0.1:11434', model: defaultModel = 'gemma3:latest', models = {}, hostHeader = '', cacheDir = '',
   jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now,
 } = {}) {
   const cache = diskCache(cacheDir);
@@ -323,6 +335,7 @@ export function createTranslateHandler({
 
   return async function translate(req, res, ip) {
     const { from, to, cues } = parseRequest(await readBody(req));
+    const model = modelFor({ model: defaultModel, models }, to);
     const units = toUnits(cues);
     const key = createHash('sha256').update(JSON.stringify([model, from, to, units.map((u) => u.text)])).digest('hex').slice(0, 32);
     const saved = (await cache.get(key)) ?? { out: [] };

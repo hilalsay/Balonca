@@ -69,7 +69,8 @@
             <p class="meaning">{meaning.inContext}{#if meaning.lemma && meaning.lemma !== card.w}<span class="muted"> · {meaning.lemma}</span>{/if}</p>
           {/if}
         </div>
-        <div class="grades">
+        <p class="ask">{t('review.ask')}</p>
+        <div class="grades" role="group" aria-label={t('review.ask')}>
           <button class="again" onclick={() => answer('again')}><strong>{t('review.again')}</strong><small>{preview('again')}</small><kbd>1</kbd></button>
           <button class="good primary" onclick={() => answer('good')}><strong>{t('review.good')}</strong><small>{preview('good')}</small><kbd>2</kbd></button>
           <button class="easy" onclick={() => answer('easy')}><strong>{t('review.easy')}</strong><small>{preview('easy')}</small><kbd>3</kbd></button>
@@ -101,6 +102,7 @@
   .meaning { margin: 0; font-weight: 800; color: var(--accent); font-size: 1.15rem; }
   mark { background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 0 4px; font-weight: 700; }
   .grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); width: min(100%, 30rem); }
+  .ask { margin: var(--space-2) 0 0; font-weight: 800; font-family: var(--font-display); }
   .grades button { display: grid; gap: 2px; justify-items: center; padding: var(--space-3) var(--space-2); min-height: 72px; }
   .grades small { opacity: 0.8; font-weight: 400; }
   .grades kbd { font-size: 0.7rem; opacity: 0.6; }
@@ -113,7 +115,11 @@
       padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom)); }
     .face { flex: 1; align-content: center; padding: var(--space-2) 0; gap: var(--space-3); }
     .grades { position: sticky; bottom: 0; width: 100%; gap: var(--space-2); padding-top: var(--space-2); background: var(--bg); }
-    .grades button { min-height: 68px; }
+    .grades button { min-height: 68px; min-width: 0; padding: var(--space-2) 4px; }
+    .grades strong { overflow-wrap: anywhere; }
+    .grades strong { font-size: 0.92rem; line-height: 1.2; }
+    .grades small { font-size: 0.72rem; line-height: 1.2; text-align: center; }
+    .ask { text-align: center; margin: 0; }
     .grades kbd { display: none; }
     .big { width: 100%; }
     .sentence { font-size: 1.1rem; }

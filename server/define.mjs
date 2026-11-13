@@ -2,7 +2,7 @@
 // by the local model. Falls back to the model alone for words Wiktionary does not have. Zero dependencies.
 import { createHash } from 'node:crypto';
 import { ApiError, LANG_RE } from './lib.mjs';
-import { chatStream, diskCache, languageName, readBody } from './translate.mjs';
+import { chatStream, diskCache, languageName, modelFor, readBody } from './translate.mjs';
 
 const UA = 'Balonca/0.1 (subtitle language-learning app)';
 const MAX_SENSES = 8;
@@ -140,10 +140,11 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
   const fromName = languageName(lang), toName = languageName(to);
   const url = `${llm.baseUrl.replace(/\/+$/, '')}/api/chat`;
   const headers = llm.hostHeader ? { host: llm.hostHeader } : {};
-  const ask = async (system, user, format, maxTokens) => {
+  // Picking the sense happens in English (the base model); writing in the learner's language may use a stronger one.
+  const ask = async (system, user, format, maxTokens, model = llm.model) => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await chat(url, {
-        model: llm.model, keep_alive: '15m', format, options: { temperature: 0.1, num_ctx: 2048, num_predict: maxTokens },
+        model, keep_alive: '15m', format, options: { temperature: 0.1, num_ctx: 2048, num_predict: maxTokens },
         messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(user) }],
       }, { headers, signal });
       if (res.status === 404) throw new ApiError(502, 'llm-model-missing');
@@ -179,7 +180,7 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
     const g = await ask(glossPrompt(fromName, toName),
       // No sentence here: given one, a small model translates the sentence instead of the sense.
       { word, senses: Object.fromEntries(senses.map((s, i) => [String(i + 1), `(${s.pos}) ${s.gloss}`])) },
-      glossSchema(senses.length), 80 + senses.length * 40);
+      glossSchema(senses.length), 80 + senses.length * 40, modelFor(llm, to));
     t = g.t ?? {};
   }
   const out = senses.map((s, i) => ({
@@ -205,7 +206,7 @@ export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl } = {}
   const cache = diskCache(cacheDir);
   return async function defineRoute(req, res) {
     const q = parseDefineRequest(await readBody(req, 20_000));
-    const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
+    const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
     if (!out) {
       const ctl = new AbortController();
