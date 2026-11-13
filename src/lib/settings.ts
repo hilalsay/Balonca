@@ -7,6 +7,7 @@ export interface Settings {
   subSize: number; // px, 14-48
   subBg: number; // 0-100
   subStyle: SubStyle;
+  subPos: number; // where the subtitles sit on the video: 0 = top, 100 = bottom
   pauseOnSave: boolean;
   autoScroll: boolean;
   hideSecondary: boolean; // blur 2nd+ tracks until clicked
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   subSize: 26,
   subBg: 55,
   subStyle: 'box',
+  subPos: 92,
   pauseOnSave: true,
   autoScroll: true,
   hideSecondary: false,
@@ -53,6 +55,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     subSize: clamp(r.subSize, 14, 48, d.subSize),
     subBg: clamp(r.subBg, 0, 100, d.subBg),
     subStyle: oneOf(r.subStyle, ['box', 'outline', 'shadow', 'contrast'] as const, d.subStyle),
+    subPos: clamp(r.subPos, 0, 100, d.subPos),
     pauseOnSave: bool(r.pauseOnSave, d.pauseOnSave),
     autoScroll: bool(r.autoScroll, d.autoScroll),
     hideSecondary: bool(r.hideSecondary, d.hideSecondary),

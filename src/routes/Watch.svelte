@@ -10,6 +10,7 @@
   import { wordPop } from '../lib/wordpop.svelte';
   import { autoSubs } from '../lib/auto.svelte';
   import { tour } from '../lib/tour.svelte';
+  import { subAdjust } from '../lib/subadjust.svelte';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
   import { router, watchUrl } from '../lib/router.svelte';
@@ -27,7 +28,8 @@
   // Phones: the panel under the video can open full screen (and its height follows what the video leaves).
   let expanded = $state(false);
   let videoH = $state(0);
-  $effect(() => { if (tour.active || router.route !== 'watch') expanded = false; }); // the tour points at the video
+  $effect(() => { if (tour.active || subAdjust.on || router.route !== 'watch') expanded = false; }); // these need the video in view
+  $effect(() => { if (tour.active || router.route !== 'watch') subAdjust.on = false; });
   async function toggleUrl() {
     showUrl = !showUrl;
     if (showUrl) { await tick(); urlInput?.focus(); urlInput?.select(); }

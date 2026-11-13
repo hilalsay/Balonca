@@ -3,6 +3,7 @@
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
   import { t } from '../lib/i18n/index.svelte';
+  import { subAdjust } from '../lib/subadjust.svelte';
 
   /** Secondary lines the user chose to reveal, per track: remembered until the line changes. */
   let revealed = $state<Record<string, number>>({});
@@ -19,7 +20,8 @@
     app.settings.hideSecondary && l.i > 0 && revealed[l.tr.id] !== l.idx;
 </script>
 
-<div class="overlay {app.settings.subStyle}" data-wordmode>
+<div class="overlay {app.settings.subStyle}" class:adjusting={subAdjust.on} data-wordmode>
+  {#if subAdjust.on && !lines.length}<div class="line sample">{t('subadj.sample')}</div>{/if}
   {#each lines as l (l.tr.id)}
     {@const cue = l.tr.cues[l.idx]}
     {#if hidden(l)}
@@ -36,7 +38,9 @@
 
 <style>
   .overlay {
-    position: absolute; left: 2%; right: 2%; bottom: 8%; z-index: 5;
+    /* top = pos% of the free space: 0 hugs the top edge, 100 the bottom edge, whatever the subtitle's height */
+    position: absolute; left: 2%; right: 2%; z-index: 5;
+    top: calc(var(--sub-pos, 92) * 1%); transform: translateY(calc(var(--sub-pos, 92) * -1%));
     display: flex; flex-direction: column; align-items: center; gap: 0.2em;
     pointer-events: none;
     font-size: calc(var(--sub-size) * var(--sub-scale, 1));
@@ -54,6 +58,8 @@
   i { display: inline-block; width: 0.35em; height: 0.35em; border-radius: 50%; margin-right: 0.45em; vertical-align: middle; }
   .blur { filter: blur(0.28em); user-select: none; }
   .secondary { font-size: 0.85em; }
+  .adjusting { outline: 2px dashed var(--pink); outline-offset: 0.25em; border-radius: 0.5em; }
+  .adjusting .line { pointer-events: none; }
 
   .box .line { background: rgb(0 0 0 / var(--sub-bg)); text-shadow: 0 1px 2px #000; }
   .outline .line {

@@ -6,6 +6,7 @@
   import { langName } from '../lib/languages';
   import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
   import { tour } from '../lib/tour.svelte';
+  import { subAdjust } from '../lib/subadjust.svelte';
   import SubtitleList from './SubtitleList.svelte';
 
   const translateChoices = ['ask', ...AUTO_LANGS] as const;
@@ -30,6 +31,9 @@
   <section>
     <h3>{t('subs.title')}</h3>
     <SubtitleList />
+    <button class="adj" onclick={() => { subAdjust.on = true; document.querySelector('.stage')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>
+      <span class="aa-ic" aria-hidden="true">Aa</span> {t('subadj.settings')}
+    </button>
   </section>
 
   {#if SUBS_API_ENABLED}
@@ -112,6 +116,8 @@
 </div>
 
 <style>
+  .adj { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: var(--space-2); font-weight: 700; justify-content: flex-start; }
+  .aa-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 800 0.8rem var(--font-display); }
   .panel { display: grid; gap: var(--space-4); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .more { border-top: 1px solid var(--line); padding-top: var(--space-2); }
