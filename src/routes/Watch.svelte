@@ -30,6 +30,16 @@
   let videoH = $state(0);
   $effect(() => { if (tour.active || subAdjust.on || router.route !== 'watch') expanded = false; }); // these need the video in view
   $effect(() => { if (tour.active || router.route !== 'watch') subAdjust.on = false; });
+  // Phones (portrait): Settings don't need the video, so that tab opens full screen; leaving it closes it again.
+  const phone = typeof matchMedia !== 'undefined' ? matchMedia('(max-width: 760px) and (orientation: portrait)') : null;
+  let autoOpened = false;
+  $effect(() => {
+    const onSettings = tab === 'settings' && !tour.active && !subAdjust.on && router.route === 'watch';
+    untrack(() => {
+      if (onSettings && phone?.matches && !expanded) { expanded = true; autoOpened = true; }
+      else if (!onSettings && autoOpened) { autoOpened = false; if (tab !== 'settings') expanded = false; }
+    });
+  });
   async function toggleUrl() {
     showUrl = !showUrl;
     if (showUrl) { await tick(); urlInput?.focus(); urlInput?.select(); }
@@ -106,7 +116,7 @@
   <WordPopover where="page" />
 
   <aside class="card side" class:expanded style:--video-h="{videoH}px">
-    <button class="handle" onclick={() => (expanded = !expanded)} aria-expanded={expanded} aria-label={t(expanded ? 'panel.collapse' : 'panel.expand')} title={t(expanded ? 'panel.collapse' : 'panel.expand')}>
+    <button class="handle" onclick={() => { expanded = !expanded; autoOpened = false; }} aria-expanded={expanded} aria-label={t(expanded ? 'panel.collapse' : 'panel.expand')} title={t(expanded ? 'panel.collapse' : 'panel.expand')}>
       <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <Tabs {tabs} bind:active={tab} label={t('nav.watch')}>
@@ -143,7 +153,7 @@
       height: max(300px, calc(100dvh - var(--header-h, 0px) - var(--nav-h) - env(safe-area-inset-bottom) - var(--video-h) - var(--space-2) - 2 * var(--space-3))); }
     .side :global(.tabs) { margin-bottom: var(--space-2); flex: none; }
     .side :global(.tabs button) { min-height: 40px; font-size: 0.95rem; }
-    .side :global(.panel) { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    .side :global([role="tabpanel"]) { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .transcript { height: 100%; min-height: 0; }
     .handle { all: unset; display: grid; place-items: center; height: 22px; cursor: pointer; flex: none; color: var(--muted); -webkit-tap-highlight-color: transparent; }
     .handle .chev { width: 26px; height: 26px; }

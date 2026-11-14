@@ -10,6 +10,21 @@ export type JobPhase = 'fetch' | 'queued' | 'translate' | 'done' | 'error';
 export interface Job { kind: 'source' | 'target'; lang: string; phase: JobPhase; done: number; total: number; ahead: number; error?: string; manual?: boolean }
 
 const PARTIAL = ' (AI…)';
+const PIVOT = 'en';
+const PIVOT_TO = 'tr';
+
+/**
+ * The order to make translations in. Turkish is translated from English (the local model is much better at
+ * English → Turkish than at e.g. Dutch → Turkish), so English is made first when it is not there yet.
+ */
+export function pivotOrder(src: string, wanted: string[], open: readonly string[]): string[] {
+  const out = [...wanted];
+  if (src !== PIVOT && out.includes(PIVOT_TO) && open.includes(PIVOT) && !out.includes(PIVOT)) out.splice(out.indexOf(PIVOT_TO), 0, PIVOT);
+  if (out.includes(PIVOT) && out.includes(PIVOT_TO) && out.indexOf(PIVOT) > out.indexOf(PIVOT_TO)) {
+    out.splice(out.indexOf(PIVOT), 1); out.splice(out.indexOf(PIVOT_TO), 0, PIVOT);
+  }
+  return out;
+}
 const FINISHED = ' (AI)';
 
 class AutoSubs {
@@ -88,7 +103,8 @@ class AutoSubs {
       if (!source || !alive()) return;
       const auto = app.settings.autoTranslate;
       const wanted = targets ?? (auto === 'ask' ? [] : [auto]);
-      for (const lang of this.offerable().filter((l) => wanted.includes(l))) {
+      const open = this.offerable();
+      for (const lang of pivotOrder(source.lang, wanted.filter((l) => open.includes(l)), open)) {
         if (!alive()) return;
         const job = this.add({ kind: 'target', lang, phase: 'translate' });
         // A hand-made YouTube subtitle in the target language beats any machine translation.
@@ -102,10 +118,13 @@ class AutoSubs {
           if (!alive()) return;
         }
 
-        const track = app.addCues([], `${source.name} → ${lang}${PARTIAL}`, lang);
+        // Turkish comes out better from the English translation than straight from e.g. Dutch.
+        const via = lang === PIVOT_TO && source.lang !== PIVOT ? app.tracks.find((t) => t.lang === PIVOT && !t.name.endsWith(PARTIAL) && t.cues.length) : undefined;
+        const from = via ?? source;
+        const track = app.addCues([], `${source.name} → ${via ? `${PIVOT} → ` : ''}${lang}${PARTIAL}`, lang);
         try {
           await serverTranslate({
-            cues: $state.snapshot(source.cues), from: source.lang, to: lang, signal,
+            cues: $state.snapshot(from.cues), from: from.lang, to: lang, signal,
             onQueued: (ahead) => { job.phase = 'queued'; job.ahead = ahead; },
             onCues: (cues, done, total) => {
               if (app.vid !== vid) return;
@@ -114,7 +133,7 @@ class AutoSubs {
             },
           });
           if (app.vid !== vid) return;
-          app.renameTrack(track.id, `${source.name} → ${lang}${FINISHED}`);
+          app.renameTrack(track.id, `${source.name} → ${via ? `${PIVOT} → ` : ''}${lang}${FINISHED}`);
           job.phase = 'done';
         } catch (e) {
           if (app.vid === vid) app.removeTrack(track.id);
