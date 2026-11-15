@@ -7,11 +7,20 @@ export interface Settings {
   subSize: number; // px, 14-48
   subBg: number; // 0-100
   subStyle: SubStyle;
+  subPos: number; // where the subtitles sit on the video: 0 = top, 100 = bottom
   pauseOnSave: boolean;
   autoScroll: boolean;
   hideSecondary: boolean; // blur 2nd+ tracks until clicked
   autoPause: boolean; // pause at the end of every line
+  autoSubs: boolean; // a new video gets its own subtitle from YouTube automatically
+  autoTranslate: 'ask' | AutoLang; // then: ask which language to translate into, or always use this one
+  meaningLang: '' | AutoLang; // language word meanings were last shown in ('' = ask)
+  colorWords: boolean; // mark words in subtitles by how well the learner knows them
 }
+
+/** Languages offered for translation and word meanings. */
+export const AUTO_LANGS = ['tr', 'en', 'nl'] as const;
+export type AutoLang = (typeof AUTO_LANGS)[number];
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
@@ -19,10 +28,15 @@ export const DEFAULT_SETTINGS: Settings = {
   subSize: 26,
   subBg: 55,
   subStyle: 'box',
+  subPos: 92,
   pauseOnSave: true,
   autoScroll: true,
   hideSecondary: false,
   autoPause: false,
+  autoSubs: true,
+  autoTranslate: 'ask',
+  meaningLang: '',
+  colorWords: true,
 };
 
 const clamp = (n: unknown, lo: number, hi: number, d: number) =>
@@ -41,9 +55,14 @@ export function sanitizeSettings(raw: unknown): Settings {
     subSize: clamp(r.subSize, 14, 48, d.subSize),
     subBg: clamp(r.subBg, 0, 100, d.subBg),
     subStyle: oneOf(r.subStyle, ['box', 'outline', 'shadow', 'contrast'] as const, d.subStyle),
+    subPos: clamp(r.subPos, 0, 100, d.subPos),
     pauseOnSave: bool(r.pauseOnSave, d.pauseOnSave),
     autoScroll: bool(r.autoScroll, d.autoScroll),
     hideSecondary: bool(r.hideSecondary, d.hideSecondary),
     autoPause: bool(r.autoPause, d.autoPause),
+    autoSubs: bool(r.autoSubs, d.autoSubs),
+    autoTranslate: oneOf(r.autoTranslate, ['ask', ...AUTO_LANGS] as const, d.autoTranslate),
+    meaningLang: oneOf(r.meaningLang, ['', ...AUTO_LANGS] as const, d.meaningLang),
+    colorWords: bool(r.colorWords, d.colorWords),
   };
 }

@@ -1,11 +1,12 @@
 import { DEFAULT_SETTINGS, type Settings } from './settings';
-import { TRACK_COLORS, uid, type SavedWord, type StoredTrack } from './types';
-import { openBalonca, loadSettings, saveSettings, loadWords, putWord, deleteWord, deleteLanguage, loadTracks, saveTracks,
+import { TRACK_COLORS, uid, type SavedWord, type StoredTrack, type WordMeaning } from './types';
+import { openBalonca, loadSettings, saveSettings, loadWords, loadKnown, saveKnown, type KnownWords, putWord, deleteWord, deleteLanguage, loadTracks, saveTracks,
   getLastVideo, setLastVideo, exportBackup, parseBackup, importBackup, type Db } from './storage';
 import { parseSubtitles } from './subtitles';
 import { detectLangFromFilename } from './languages';
 import { makeWord, toggleWord, wordId } from './words/bags';
-import { schedule, type Grade } from './srs/scheduler';
+import { lineAt, translateSentence } from './words/sentence';
+import { schedule, LEARNED_DAYS, type Grade } from './srs/scheduler';
 import { setLocale } from './i18n/index.svelte';
 import { loadExample, exampleFileUrl } from './example';
 import { theme, applyTheme } from './theme.svelte';
@@ -23,6 +24,10 @@ class AppState {
   vid = $state<string | null>(null);
   tracks = $state<StoredTrack[]>([]);
   savedIds = $derived(new Set(this.words.map((w) => w.id)));
+  wordById = $derived(new Map(this.words.map((w) => [w.id, w])));
+  /** Words marked "I know this", per language. */
+  known = $state<KnownWords>({});
+  knownSets = $derived(new Map(Object.entries(this.known).map(([l, keys]) => [l, new Set(keys)])));
   visibleTracks = $derived(this.tracks.filter((t) => t.visible));
   /** Video id of the installed example, if this machine has one. */
   exampleId = $state<string | null>(null);
@@ -30,6 +35,9 @@ class AppState {
   private db: Db | null = null;
   private persistTracks = debounce(() => {
     if (this.db && this.vid) void saveTracks(this.db, this.vid, $state.snapshot(this.tracks) as StoredTrack[]);
+  }, 400);
+  private persistKnown = debounce(() => {
+    if (this.db) void saveKnown(this.db, $state.snapshot(this.known) as KnownWords);
   }, 400);
   private persistSettings = debounce(() => {
     if (this.db) void saveSettings(this.db, $state.snapshot(this.settings) as Settings);
@@ -41,6 +49,7 @@ class AppState {
       this.db = await openBalonca();
       this.settings = await loadSettings(this.db);
       this.words = await loadWords(this.db);
+      this.known = await loadKnown(this.db);
       this.applySettings(false);
       const last = await getLastVideo(this.db);
       if (last) await this.openVideo(last);
@@ -117,6 +126,21 @@ class AppState {
     return track;
   }
 
+  /** Appends cues to a track (streamed translation). Cues must come in time order. */
+  appendCues(id: string, cues: StoredTrack['cues']) {
+    const t = this.tracks.find((x) => x.id === id);
+    if (!t) return;
+    t.cues.push(...cues);
+    this.persistTracks();
+  }
+
+  renameTrack(id: string, name: string) {
+    const t = this.tracks.find((x) => x.id === id);
+    if (!t) return;
+    t.name = name;
+    this.persistTracks();
+  }
+
   updateTrack(id: string, patch: Partial<Pick<StoredTrack, 'label' | 'lang' | 'color' | 'visible' | 'offset'>>) {
     const t = this.tracks.find((x) => x.id === id);
     if (!t) return;
@@ -136,6 +160,73 @@ class AppState {
     this.words = list;
     if (this.db) void (added ? putWord(this.db, $state.snapshot(w) as SavedWord) : deleteWord(this.db, w.id));
     return added;
+  }
+
+  /** Adds (or replaces) the sentence's translation in one language. */
+  setTrans(id: string, lang: string, text: string) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w || !text) return;
+    w.trans = [...w.trans.filter((x) => x.lang !== lang), { lang, text }];
+    if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
+  }
+
+  /** The saved sentence in `lang` from the video's own subtitles (no server); stores and returns it when found. */
+  async transFromTracks(word: SavedWord, lang: string): Promise<string | null> {
+    if (!word.vid) return null;
+    const tracks = word.vid === this.vid ? this.tracks : this.db ? await loadTracks(this.db, word.vid) : [];
+    const text = lineAt(tracks as StoredTrack[], lang, word.t);
+    if (text) this.setTrans(word.id, lang, text);
+    return text;
+  }
+
+  /** The saved sentence in `lang`: from the video's subtitles if they have it, else translated by the server. */
+  async translateWordSentence(word: SavedWord, lang: string, signal?: AbortSignal): Promise<string> {
+    const local = await this.transFromTracks(word, lang);
+    if (local) return local;
+    const text = await translateSentence({ text: word.ctx, from: word.lang, to: lang, signal });
+    this.setTrans(word.id, lang, text);
+    return text;
+  }
+
+  /** The learner's own correction of a word's meaning and/or the sentence translation in `lang` (empty = leave as is). */
+  fixWord(id: string, lang: string, fix: { meaning?: string; trans?: string }) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w) return;
+    const meaning = fix.meaning?.trim(), trans = fix.trans?.trim();
+    if (meaning) {
+      const m = w.meanings?.[lang];
+      w.meanings = { ...(w.meanings ?? {}), [lang]: m ? { ...m, inContext: meaning, edited: true }
+        : { lemma: w.w, inContext: meaning, senses: [], source: 'dictionary', at: Date.now(), edited: true } };
+    }
+    if (trans) w.trans = [...w.trans.filter((x) => x.lang !== lang), { lang, text: trans, edited: true }];
+    if (this.db && (meaning || trans)) void putWord(this.db, $state.snapshot(w) as SavedWord);
+  }
+
+  /** Stores a word's meaning in one language (shown again instantly, kept in backups). */
+  setMeaning(id: string, to: string, meaning: WordMeaning) {
+    const w = this.words.find((x) => x.id === id);
+    if (!w || meaning.temporary) return; // a stopgap guess (dictionary unreachable) is shown, never kept
+    w.meanings = { ...(w.meanings ?? {}), [to]: meaning };
+    if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
+  }
+
+  /** new: never saved or marked; learning: in the review bag; known: learned in review or marked "I know this". */
+  wordStatus(lang: string, key: string): 'new' | 'learning' | 'known' {
+    const w = this.wordById.get(wordId(lang, key));
+    if (w) return w.ivl >= LEARNED_DAYS ? 'known' : 'learning';
+    return this.knownSets.get(lang)?.has(key) ? 'known' : 'new';
+  }
+
+  isKnown(lang: string, key: string) {
+    return !!this.knownSets.get(lang)?.has(key);
+  }
+
+  /** Marks a word as known (or not any more). A known word is not part of the review bag. */
+  setKnown(lang: string, key: string, on: boolean) {
+    const list = this.known[lang] ?? [];
+    if (on === list.includes(key)) return;
+    this.known = { ...this.known, [lang]: on ? [...list, key] : list.filter((k) => k !== key) };
+    this.persistKnown();
   }
 
   isSaved(lang: string, key: string) {
@@ -169,6 +260,7 @@ class AppState {
     const backup = parseBackup(text);
     const counts = await importBackup(this.db, backup, mode);
     this.words = await loadWords(this.db);
+    this.known = await loadKnown(this.db);
     if (mode === 'replace') {
       this.settings = await loadSettings(this.db);
       this.applySettings(false);

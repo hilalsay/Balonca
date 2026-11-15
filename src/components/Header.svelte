@@ -24,8 +24,8 @@
   const themeIcon = { auto: '◐', light: '☀', dark: '☾' } as const;
 </script>
 
-<header bind:this={el}>
-  <a class="logo" href="#/" aria-label="Balonca"><Mascot size={34} /><span>Balonca</span></a>
+<header bind:this={el} class:on-watch={router.route === 'watch'}>
+  <a class="logo" href="#/" aria-label="Balonca"><Mascot size={30} /><span>Balonca</span></a>
   <nav aria-label="Main">
     {#each links as [route, key]}
       <a href={`#/${route === 'home' ? '' : route}`} aria-current={router.route === route ? 'page' : undefined}>{t(key)}</a>
@@ -58,9 +58,18 @@
   nav a[aria-current='page'] { background: var(--accent-soft); color: var(--accent); }
   .tools { display: flex; gap: var(--space-2); }
   .icon { min-width: 44px; padding: 0 10px; }
-  @media (max-width: 640px) {
-    header { flex-wrap: wrap; }
-    nav { order: 3; width: 100%; margin-left: 0; justify-content: space-between; }
+  @media (max-width: 760px) {
+    header { padding: 6px var(--space-3); padding-top: max(6px, env(safe-area-inset-top)); }
+    nav { display: none; } /* the bottom tab bar takes over */
     .tools { margin-left: auto; }
+    .logo { font-size: 18px; }
+    .icon { min-height: 40px; min-width: 40px; }
+  }
+  /* Phones: the player gets the whole screen; the bottom tab bar has the navigation. */
+  @media (max-width: 760px) and (orientation: portrait) { header.on-watch { display: none; } }
+  @media (max-width: 760px) and (orientation: landscape) {
+    nav { display: flex; margin-left: auto; }
+    nav a { padding: 8px 10px; font-size: 0.9rem; }
+    .tools { margin-left: 0; }
   }
 </style>

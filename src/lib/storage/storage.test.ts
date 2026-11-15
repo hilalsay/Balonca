@@ -97,6 +97,16 @@ describe('backup', () => {
     expect(b.tracks[0].cues).toHaveLength(1);
     expect(b.tracks[0].color).toBe('#a995ff');
   });
+  it('keeps the learner\'s own fixes (edited meaning and sentence translation)', () => {
+    const b = parseBackup(JSON.stringify({
+      app: 'balonca', version: 1,
+      words: [{ w: 'schat', lang: 'nl', ctx: 'x', trans: [{ lang: 'tr', text: 'Canım.', edited: true }, { lang: 'en', text: 'Hi', edited: 'yes' }],
+        meanings: { tr: { lemma: 'schat', inContext: 'hazine', senses: [], source: 'dictionary', at: 1, edited: true } } }],
+      tracks: [],
+    }));
+    expect(b.words[0].trans).toEqual([{ lang: 'tr', text: 'Canım.', edited: true }, { lang: 'en', text: 'Hi' }]);
+    expect(b.words[0].meanings?.tr.edited).toBe(true);
+  });
 });
 
 describe('legacy migration', () => {
@@ -129,5 +139,37 @@ describe('legacy migration', () => {
     expect((await loadTracks(db, 'abcdefghijk'))).toHaveLength(1);
     expect((await loadSettings(db)).locale).toBe('en');
     expect(await db.get('k', 'state')).toBeTruthy(); // legacy blob kept as a safety net
+  });
+});
+
+describe('known words ("I know this")', () => {
+  it('cleans untrusted data', async () => {
+    const { sanitizeKnown } = await import('./index');
+    expect(sanitizeKnown({ nl: ['hoi', 'hoi', '', 5, 'x'.repeat(61), 'dag'], 'bad lang': ['a'], en: 'nope' })).toEqual({ nl: ['hoi', 'dag'] });
+    expect(sanitizeKnown(null)).toEqual({});
+  });
+
+  it('round-trip, travel in backups, merge unites and replace replaces', async () => {
+    const { loadKnown, saveKnown } = await import('./index');
+    const a = await fresh();
+    await saveKnown(a, { nl: ['hoi', 'dag'] });
+    expect(await loadKnown(a)).toEqual({ nl: ['hoi', 'dag'] });
+    const backup = parseBackup(JSON.stringify(await exportBackup(a)));
+    expect(backup.known).toEqual({ nl: ['hoi', 'dag'] });
+
+    const b = await fresh();
+    await saveKnown(b, { nl: ['ja'], en: ['yes'] });
+    await importBackup(b, backup, 'merge');
+    expect(await loadKnown(b)).toEqual({ nl: ['ja', 'hoi', 'dag'], en: ['yes'] });
+
+    const c = await fresh();
+    await saveKnown(c, { en: ['yes'] });
+    await importBackup(c, backup, 'replace');
+    expect(await loadKnown(c)).toEqual({ nl: ['hoi', 'dag'] });
+  });
+
+  it('older backups without known words still import', () => {
+    const old = JSON.stringify({ app: 'balonca', version: 1, words: [], tracks: [] });
+    expect(parseBackup(old).known).toEqual({});
   });
 });

@@ -2,22 +2,22 @@
   import { tokenize } from '../lib/words/tokenize';
   import { app } from '../lib/state.svelte';
   import { player } from '../lib/player/controller.svelte';
-  import { t } from '../lib/i18n/index.svelte';
-  import { toast } from '../lib/toast.svelte';
+  import { wordPop } from '../lib/wordpop.svelte';
 
   let { text, lang, trans }: { text: string; lang: string; trans?: () => { lang: string; text: string }[] } = $props();
   const tokens = $derived(tokenize(text, lang));
-  let popped = $state('');
-  let timer: ReturnType<typeof setTimeout>;
 
-  function save(key: string, surface: string) {
-    const added = app.toggleWord({ lang, word: surface, ctx: text, trans: trans?.(), t: player.now() });
-    if (added && app.settings.pauseOnSave) player.pause();
-    if (added) toast(`${key} · ${t('word.saved')}`, 'success', 2200);
-    popped = key;
-    clearTimeout(timer);
-    timer = setTimeout(() => (popped = ''), 350);
+  /** Tapping a word opens its card (meaning, save, "I know this"); a second tap on the same word closes it. */
+  function open(e: MouseEvent, key: string, surface: string) {
+    const el = e.currentTarget as HTMLElement;
+    if (wordPop.cur?.anchor === el) { wordPop.close(); return; }
+    const r = el.getBoundingClientRect();
+    wordPop.open({
+      lang, key, surface, ctx: text, trans: trans?.() ?? [], t: player.now(), anchor: el,
+      rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width },
+    });
   }
+  const status = (key: string) => (app.settings.colorWords || app.isSaved(lang, key) ? app.wordStatus(lang, key) : 'new');
 
   /** Arrow keys move between words; the event never reaches the global player shortcuts. */
   function onkeydown(e: KeyboardEvent) {
@@ -35,11 +35,12 @@
 <span class="wordrow" {lang} {onkeydown}>{#each tokens as tok}{#if tok.isWord}<button
         type="button"
         class="w"
-        class:sv={app.isSaved(lang, tok.key)}
-        class:pop={popped === tok.key}
+        class:sv={status(tok.key) === 'learning'}
+        class:kn={status(tok.key) === 'known'}
+        class:open={wordPop.cur?.key === tok.key && wordPop.cur?.lang === lang && wordPop.cur?.ctx === text}
         tabindex="-1"
-        aria-pressed={app.isSaved(lang, tok.key)}
-        onclick={() => save(tok.key, tok.text)}>{tok.text}</button>{:else}{tok.text}{/if}{/each}</span>
+        aria-haspopup="dialog"
+        onclick={(e) => open(e, tok.key, tok.text)}>{tok.text}</button>{:else}{tok.text}{/if}{/each}</span>
 
 <style>
   .w {
@@ -55,6 +56,6 @@
   .w:hover { background: var(--accent); color: var(--accent-ink); }
   .w:focus-visible { outline: 3px solid var(--pink); outline-offset: 1px; }
   .w.sv { text-decoration: underline wavy var(--pink); text-decoration-thickness: 1.5px; text-underline-offset: 0.22em; }
-  .w.pop { animation: pop 0.32s ease-out; }
-  @keyframes pop { 40% { transform: scale(1.3); background: var(--pink); color: #1a1226; } }
+  .w.kn { opacity: 0.62; }
+  .w.open { background: var(--accent); color: var(--accent-ink); opacity: 1; }
 </style>

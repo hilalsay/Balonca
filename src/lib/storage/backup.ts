@@ -1,6 +1,6 @@
 import type { SavedWord, StoredTrack } from '../types';
 import { sanitizeSettings, type Settings } from '../settings';
-import { loadSettings, loadWords, getLastVideo } from './repo';
+import { loadSettings, loadWords, getLastVideo, loadKnown, sanitizeKnown, type KnownWords } from './repo';
 import type { Db } from './db';
 
 export const BACKUP_VERSION = 1;
@@ -13,6 +13,7 @@ export interface Backup {
   words: SavedWord[];
   tracks: StoredTrack[];
   lastVideo: string | null;
+  known?: KnownWords; // optional: backups from before "I know this" have none
 }
 
 export class BackupError extends Error {
@@ -26,7 +27,7 @@ export async function exportBackup(db: Db): Promise<Backup> {
   return {
     app: 'balonca', version: BACKUP_VERSION, exportedAt: new Date().toISOString(),
     settings: await loadSettings(db), words: await loadWords(db),
-    tracks: await db.getAll('tracks'), lastVideo: await getLastVideo(db),
+    tracks: await db.getAll('tracks'), lastVideo: await getLastVideo(db), known: await loadKnown(db),
   };
 }
 
@@ -38,12 +39,32 @@ function cleanWord(x: any): SavedWord | null {
   return {
     id: `${x.lang}:${x.w}`, w: x.w, lang: x.lang, ctx: isStr(x.ctx) ? x.ctx : '',
     trans: Array.isArray(x.trans)
-      ? x.trans.filter((r: any) => r && isStr(r.lang) && isStr(r.text)).slice(0, 4).map((r: any) => ({ lang: r.lang, text: r.text.slice(0, 500) }))
+      ? x.trans.filter((r: any) => r && isStr(r.lang) && isStr(r.text)).slice(0, 4).map((r: any) => ({ lang: r.lang, text: r.text.slice(0, 500), ...(r.edited === true ? { edited: true } : {}) }))
       : [],
     vid: isStr(x.vid) ? x.vid : undefined, t: isNum(x.t) ? x.t : 0, added: isNum(x.added) ? x.added : Date.now(),
     reps: isNum(x.reps) ? x.reps : 0, ivl: isNum(x.ivl) ? x.ivl : 0, ease: isNum(x.ease) ? x.ease : 2.5,
     lapses: isNum(x.lapses) ? x.lapses : 0, due: isNum(x.due) ? x.due : undefined,
+    ...(cleanMeanings(x.meanings) ? { meanings: cleanMeanings(x.meanings) } : {}),
   };
+}
+
+/** Word meanings from a backup file, field by field (rendered as text, but still untrusted). */
+function cleanMeanings(raw: any): SavedWord['meanings'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<SavedWord['meanings']> = {};
+  for (const [to, m] of Object.entries(raw).slice(0, 6) as [string, any][]) {
+    if (!/^[a-z]{2,3}$/.test(to) || !m || !isStr(m.inContext) || !Array.isArray(m.senses)) continue;
+    out[to] = {
+      lemma: isStr(m.lemma) ? m.lemma.slice(0, 60) : '', inContext: m.inContext.slice(0, 200),
+      source: m.source === 'ai' ? 'ai' : 'dictionary', at: isNum(m.at) ? m.at : 0, ...(m.edited === true ? { edited: true } : {}),
+      senses: m.senses.filter((s: any) => s && isStr(s.meaning)).slice(0, 10).map((s: any) => ({
+        head: isStr(s.head) ? s.head.slice(0, 60) : '', pos: isStr(s.pos) ? s.pos.slice(0, 30) : '', meaning: s.meaning.slice(0, 200),
+        ...(isStr(s.en) ? { en: s.en.slice(0, 200) } : {}), ...(isStr(s.example) ? { example: s.example.slice(0, 200) } : {}),
+        ...(s.best === true ? { best: true } : {}),
+      })),
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function cleanTrack(x: any): StoredTrack | null {
@@ -70,6 +91,7 @@ export function parseBackup(text: string): Backup {
     words: data.words.map(cleanWord).filter((w: SavedWord | null): w is SavedWord => !!w),
     tracks: data.tracks.map(cleanTrack).filter((t: StoredTrack | null): t is StoredTrack => !!t),
     lastVideo: isStr(data.lastVideo) ? data.lastVideo : null,
+    known: sanitizeKnown(data.known),
   };
 }
 
@@ -88,6 +110,11 @@ export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge')
     words++;
   }
   for (const t of b.tracks) await tx.objectStore('tracks').put(t);
+  // Known words: replace takes the backup's, merge unites both.
+  const mine = mode === 'merge' ? sanitizeKnown(await tx.objectStore('meta').get('known')) : {};
+  const known: KnownWords = { ...mine };
+  for (const [lang, keys] of Object.entries(b.known ?? {})) known[lang] = [...new Set([...(known[lang] ?? []), ...keys])];
+  await tx.objectStore('meta').put(known, 'known');
   if (mode === 'replace') {
     await tx.objectStore('meta').put({ ...b.settings }, 'settings');
     if (b.lastVideo) await tx.objectStore('meta').put(b.lastVideo, 'lastVideo');

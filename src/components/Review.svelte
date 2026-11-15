@@ -15,6 +15,8 @@
 
   const card = $derived(app.words.find((w) => w.id === queue[0]));
   const parts = $derived(card ? tokenize(card.ctx, card.lang) : []);
+  // A meaning saved from the word list, in the language the learner reads meanings in (or any saved one).
+  const meaning = $derived(card ? ((app.settings.meaningLang && card.meanings?.[app.settings.meaningLang]) || Object.values(card.meanings ?? {})[0]) : undefined);
 
   function preview(g: Grade): string {
     if (!card) return '';
@@ -61,9 +63,16 @@
         <div class="back" aria-live="polite">
           <div class="label muted">{t('review.context')}</div>
           <p class="sentence" lang={card.lang}>{#each parts as p}{#if p.isWord && p.key === card.w}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}</p>
-          {#each card.trans as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
+          {#each [...card.trans].sort((a, b) => Number(b.lang === app.settings.meaningLang) - Number(a.lang === app.settings.meaningLang)) as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
+          {#if meaning}
+            <div class="label muted">{t('meaning.here')}</div>
+            <p class="meaning">{meaning.inContext}{#if meaning.lemma && meaning.lemma !== card.w}<span class="muted"> · {meaning.lemma}</span>{/if}</p>
+            {@const en = (meaning.senses.find((x) => x.best) ?? meaning.senses[0])?.en}
+            {#if en && en !== meaning.inContext && app.settings.meaningLang !== 'en'}<p class="dict muted"><span>{t('dict.line')}</span> <i lang="en">{en}</i></p>{/if}
+          {/if}
         </div>
-        <div class="grades">
+        <p class="ask">{t('review.ask')}</p>
+        <div class="grades" role="group" aria-label={t('review.ask')}>
           <button class="again" onclick={() => answer('again')}><strong>{t('review.again')}</strong><small>{preview('again')}</small><kbd>1</kbd></button>
           <button class="good primary" onclick={() => answer('good')}><strong>{t('review.good')}</strong><small>{preview('good')}</small><kbd>2</kbd></button>
           <button class="easy" onclick={() => answer('easy')}><strong>{t('review.easy')}</strong><small>{preview('easy')}</small><kbd>3</kbd></button>
@@ -92,11 +101,30 @@
   .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
   .sentence { font-size: 1.2rem; margin: 0; }
   .trans { margin: 0; color: var(--muted); font-size: 1.05rem; }
+  .meaning { margin: 0; font-weight: 800; color: var(--accent); font-size: 1.15rem; }
   mark { background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 0 4px; font-weight: 700; }
   .grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); width: min(100%, 30rem); }
+  .dict { margin: 0; font-size: 0.9rem; }
+  .ask { margin: var(--space-2) 0 0; font-weight: 800; font-family: var(--font-display); }
   .grades button { display: grid; gap: 2px; justify-items: center; padding: var(--space-3) var(--space-2); min-height: 72px; }
   .grades small { opacity: 0.8; font-weight: 400; }
   .grades kbd { font-size: 0.7rem; opacity: 0.6; }
   .again { border-color: var(--danger); }
   .done { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-5) 0; text-align: center; }
+  /* Phones: review is a full-screen moment; the grade buttons sit at the bottom, under the thumb. */
+  @media (max-width: 760px) {
+    .review { position: fixed; inset: 0; z-index: 250; margin: 0; border-radius: 0; border: 0;
+      display: flex; flex-direction: column; gap: var(--space-2); overflow-y: auto; background: var(--bg);
+      padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom)); }
+    .face { flex: 1; align-content: center; padding: var(--space-2) 0; gap: var(--space-3); }
+    .grades { position: sticky; bottom: 0; width: 100%; gap: var(--space-2); padding-top: var(--space-2); background: var(--bg); }
+    .grades button { min-height: 68px; min-width: 0; padding: var(--space-2) 4px; }
+    .grades strong { overflow-wrap: anywhere; }
+    .grades strong { font-size: 0.92rem; line-height: 1.2; }
+    .grades small { font-size: 0.72rem; line-height: 1.2; text-align: center; }
+    .ask { text-align: center; margin: 0; }
+    .grades kbd { display: none; }
+    .big { width: 100%; }
+    .sentence { font-size: 1.1rem; }
+  }
 </style>

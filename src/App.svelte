@@ -1,6 +1,9 @@
 <script lang="ts">
   import Header from './components/Header.svelte';
   import Toasts from './components/Toasts.svelte';
+  import BottomNav from './components/BottomNav.svelte';
+  import Tour from './components/Tour.svelte';
+  import { tour } from './lib/tour.svelte';
   import Home from './routes/Home.svelte';
   import NotFound from './routes/NotFound.svelte';
   import { router } from './lib/router.svelte';
@@ -25,6 +28,9 @@
   let watchOpened = $state(router.route === 'watch');
   $effect(() => { if (router.route === 'watch') watchOpened = true; });
   const Watch = $derived(loaded.watch);
+
+  // First visit only: offer a short tour (never started on its own; always available from Home, Help, Settings).
+  $effect(() => { if (app.ready) { const h = setTimeout(() => tour.maybeOffer(), 900); return () => clearTimeout(h); } });
   const Page = $derived(router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 
@@ -42,7 +48,9 @@
     {/if}
   {/if}
 </main>
-<footer><small class="muted">{t('footer.note')}</small></footer>
+<footer class:on-watch={router.route === 'watch'}><small class="muted">{t('footer.note')}</small></footer>
+<BottomNav />
+<Tour />
 <Toasts />
 
 <style>
@@ -53,4 +61,9 @@
   footer { text-align: center; padding: var(--space-5) var(--space-4); }
   .skip { position: absolute; left: -999px; top: 8px; z-index: 300; background: var(--accent); color: var(--accent-ink); padding: 10px 16px; border-radius: 10px; }
   .skip:focus { left: 8px; }
+  @media (max-width: 760px) {
+    main { padding: var(--space-3); min-height: 0; }
+    footer { padding: var(--space-3) var(--space-4) calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--space-4)); }
+    footer.on-watch { display: none; } /* the player fills the screen */
+  }
 </style>

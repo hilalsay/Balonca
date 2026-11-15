@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
 
   let {
     count, estimate = 72, overscan = 6, label, resetKey = '', row, onuser,
@@ -37,7 +37,9 @@
   });
   const visible = $derived(Array.from({ length: Math.max(0, range.end - range.start + 1) }, (_, k) => range.start + k));
 
-  $effect(() => { void resetKey; void count; heights = new Map(); version++; });
+  // Only resetKey and count may re-run this: reading `version` here too would make every height measurement
+  // (version++ from the ResizeObserver) reset all heights, which loops while rows keep changing size.
+  $effect(() => { void resetKey; void count; heights = new Map(); untrack(() => version++); });
 
   function measure(node: HTMLElement, i: number) {
     let index = i;

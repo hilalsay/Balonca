@@ -112,7 +112,7 @@ export function semaphore(limit, queueMax) {
 
 export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
-  ttlMs = 10 * 60_000, now = Date.now,
+  ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
 } = {}) {
   const limit = rateLimiter(ratePerMinute, now);
   const slot = semaphore(2, 4);
@@ -131,16 +131,37 @@ export function createHandler({
     const send = (status, body, type = 'application/json; charset=utf-8') => {
       res.writeHead(status, {
         'content-type': type, 'x-content-type-options': 'nosniff', 'cache-control': 'private, max-age=60',
-        ...(origin && allowedOrigins.includes(origin) ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}),
+        ...(origin && allowedOrigins.includes(origin)
+          ? { 'access-control-allow-origin': origin, 'access-control-allow-headers': 'content-type', vary: 'Origin' } : {}),
       });
       res.end(typeof body === 'string' ? body : JSON.stringify(body));
     };
     try {
       if (req.method === 'OPTIONS') return send(204, '');
-      if (req.method !== 'GET') throw new ApiError(405, 'method');
       const url = new URL(req.url ?? '/', 'http://x');
       const ip = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
-      if (url.pathname === '/api/health') return send(200, { ok: true, ytdlp: ytdlpInstalled });
+      if (url.pathname === '/api/translate') {
+        if (!translate) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'POST') throw new ApiError(405, 'method');
+        if (!limit(ip)) throw new ApiError(429, 'rate-limit');
+        return await translate(req, res, ip); // streams its own response
+      }
+      if (url.pathname === '/api/define') {
+        if (!define) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'POST') throw new ApiError(405, 'method');
+        if (!limit(ip)) throw new ApiError(429, 'rate-limit');
+        return await define(req, res, ip);
+      }
+      if (url.pathname === '/api/sentence') {
+        if (!sentence) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'POST') throw new ApiError(405, 'method');
+        if (!limit(ip)) throw new ApiError(429, 'rate-limit');
+        return await sentence(req, res, ip);
+      }
+      if (req.method !== 'GET') throw new ApiError(405, 'method');
+      if (url.pathname === '/api/health') {
+        return send(200, { ok: true, ytdlp: ytdlpInstalled, ...(llmStatus ? { llm: await llmStatus() } : {}) });
+      }
       if (!limit(ip)) throw new ApiError(429, 'rate-limit');
 
       const id = url.searchParams.get('v') ?? '';
@@ -158,7 +179,7 @@ export function createHandler({
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(500, 'failed');
       if (err.status >= 500) console.error(`[${new Date().toISOString()}] ${req.url} -> ${err.code}: ${err.detail ?? e?.message ?? ''}`);
-      send(err.status, { error: err.code });
+      if (res.headersSent) res.end(); else send(err.status, { error: err.code });
     }
   };
 }

@@ -4,19 +4,26 @@ A language-learning subtitle player. Paste a YouTube link, add one or more subti
 several tracks at once (for example Dutch auto-captions plus a Turkish translation). Tap any word to drop it
 into a per-language **word bag**, then review the bag with flashcards.
 
-Static site: no backend, no accounts. Everything you create stays in your browser (IndexedDB).
+No accounts. Your words, progress and subtitles stay in your browser (IndexedDB). An optional small Node service
+fetches subtitles from YouTube and translates them with a local AI model (Ollama); without it the site still works as
+a plain static site.
 Videos play through YouTube's official IFrame player only; nothing is downloaded or re-hosted.
 
 ## Features
-- Several subtitle tracks at once: visibility, colour, editable name, language code, ±0.2 s sync offset
-- Formats: `.srt`, `.vtt`, YouTube `.json3`, simple JSON `[{start,end,text}]`; drag & drop or paste text
-- Language auto-detected from the file name (`video.nl.srt`); YouTube auto-caption rolling duplicates merged
-- Click-to-save words (per language), saved words marked everywhere, jump back to the moment, CSV export
+- Several subtitle tracks at once (the video's own + translations): show/hide and ±0.2 s sync in Settings
+- Subtitles come from YouTube by themselves (parsers for `.json3`, `.vtt`, `.srt`); auto-caption rolling duplicates merged
+- Known words ("I know this") per language, kept in backups; saved words marked everywhere, jump back to the moment, CSV export
 - Flashcard review with simple spaced repetition (again / good / easy), progress and counts
 - Transcript synced to playback, virtualized for long videos; prev/next line, repeat line, speed, fullscreen
 - Optional: hide translations until tapped, pause at the end of each line, 4 subtitle styles incl. high contrast
 - Full backup/restore of words, settings and subtitles as one JSON file
-- Optional in-browser translation helper (your own Anthropic API key)
+- **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube, asks which language to
+  translate into (or uses the remembered one), and translates with a local Ollama model; lines appear while the rest
+  is translated
+- **Tap a word while watching**: a card shows its meaning in that sentence, with "add to my words" and "I know this";
+  words are coloured by status (new / learning / known) and the transcript shows what share of the video's words you know
+- **Word meanings**: 📖 next to a saved word shows its meaning in that sentence, the dictionary form, other meanings
+  and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the local model)
 - Turkish and English UI, light / dark / auto theme, mobile-first layout
 
 Keyboard: `Space` play/pause · `←` `→` previous/next line · `R` repeat line · `F` fullscreen ·
@@ -94,6 +101,45 @@ Things to know:
 - Keep `yt-dlp` current: YouTube changes break old versions, and distribution packages can lag behind. If the
   packaged one stops working, update it (`pipx upgrade yt-dlp`, or a newer package/standalone binary).
 
+## Automatic translation (Ollama)
+The same service translates subtitles with a local model through [Ollama](https://ollama.com), so it costs nothing
+per video and no text leaves your server. When a video opens with no subtitles, the app:
+
+1. lists the video's subtitles and picks the spoken language (YouTube's `-orig` auto-caption tells which), preferring
+   a hand-made track in that language over the automatic one;
+2. for every language under **Settings → Automatic subtitles** (default Turkish and English; the video's own language
+   is skipped) uses a hand-made YouTube subtitle if there is one, otherwise translates with the local model.
+
+`POST /api/translate` with `{from, to, cues:[{start,end,text}]}` answers with NDJSON events
+(`meta`, `queued`, `cues`, `ping`, `done` / `error`). How it keeps small models accurate:
+- **Sentences, not lines.** Subtitle lines are cut mid-sentence ("Ik graaf naar een verborgen" / "schat."), which makes
+  small models shift words between lines. Lines are joined and re-split into sentences, each with a time span
+  interpolated from its words; the translated track has one cue per sentence.
+- **Numbered JSON with a schema.** Each batch (8 sentences, 3 earlier ones as context) is sent as `{"1": …, "2": …}`
+  and Ollama is constrained to answer exactly those keys, so nothing can go missing or out of order.
+- A batch the model answered in the source language is retried once; stray characters some models append are removed.
+
+One translation runs at a time (the model runs on the CPU), others wait in a queue and are told how many jobs are
+ahead. Progress is saved to disk after every batch (`.cache/translations/`), so a repeated video is instant and an
+interrupted one resumes. Each client may start 12 new (uncached) translations per hour.
+
+Environment: `OLLAMA_URL` (default `http://127.0.0.1:11434`, `off` disables translation), `OLLAMA_MODEL`
+(default `gemma3:latest`), `OLLAMA_HOST_HEADER` (only if your Ollama checks the `Host` header),
+`TRANSLATE_CACHE_DIR`, `TRANSLATE_JOBS_PER_HOUR`. `/api/health` reports whether the model is reachable.
+On a CPU, `gemma3` (4B) translates about one sentence per second: a 10-minute video takes 3–4 minutes.
+English output is good; Turkish is usable with occasional wrong words, and a larger model (e.g. `gemma3:12b`, ~8 GB RAM)
+improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translating.
+
+## Word meanings
+`POST /api/define` with `{word, lang, to, ctx}` answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
+1. Senses come from [Wiktionary](https://en.wiktionary.org) (`/api/rest_v1/page/definition/<word>`): grammar lines such as
+   "first-person singular present" are dropped, and "inflection of graven" is followed to *graven*.
+2. The local model only picks the sense used in the saved sentence (asked in English, the easiest task for a small
+   model) and, for Turkish or Dutch, translates the English glosses. The English original stays visible for checking.
+3. A word Wiktionary does not have (names, misheard words) gets the model's own guess, labelled `source: "ai"`.
+Results are cached on disk (`DEFINE_CACHE_DIR`, default `.cache/definitions/`), except a guess made while Wiktionary
+could not be reached. In the app, meanings are saved with the word, shown on flashcards and kept in backups.
+
 ## Example video (optional, installed per machine)
 The repository contains no example video or captions. If you want first-time visitors to land on a video that already
 has subtitles, install one on the machine that builds or serves the site. It uses the machine's own `yt-dlp`:
@@ -121,10 +167,11 @@ src/lib/words/       tokenizer, word-bag logic, CSV               (unit-tested)
 src/lib/srs/         spaced-repetition scheduler                  (unit-tested)
 src/lib/storage/     IndexedDB, backup/restore, legacy migration  (unit-tested)
 src/lib/player/      YouTube wrapper, cue lookup/alignment, controller
-src/lib/translate/   Anthropic client + batch runner (isolated)   (unit-tested)
+src/lib/translate/   Anthropic client, batch runner, streaming client for the server   (unit-tested)
+src/lib/auto.svelte.ts  automatic subtitles: fetch source, translate into the chosen languages
 src/lib/ytsubs/      client + language filter for the subtitle service (unit-tested)
 scripts/             per-machine example-video setup (unit-tested)
-server/              yt-dlp subtitle service (Node, no dependencies)  (unit-tested)
+server/              yt-dlp subtitle service + Ollama translation (Node, no dependencies)  (unit-tested)
 src/lib/i18n/        tr.ts is the source, en.ts must cover every key
 src/components/      UI pieces      src/routes/   pages
 legacy/              the original single-file prototypes (reference only)
@@ -155,8 +202,10 @@ features (and YouTube embedding behaviour) are more reliable on a secure origin.
 
 ## Security notes
 - Subtitle text is parsed to plain text and rendered through Svelte's escaping; there is no `innerHTML` or `{@html}`.
-- Strict CSP (meta tag and nginx header): scripts only from self and youtube.com, API calls only to self and
-  api.anthropic.com, no inline styles or scripts.
+- Strict CSP (meta tag and nginx header): scripts only from self and youtube.com, API calls only to self,
+  no inline styles or scripts.
+- The service only listens on 127.0.0.1 behind nginx. Translation requests are size-limited (1 MB, 5000 lines),
+  validated, rate-limited per client and cancelled when the browser disconnects.
 - Imported backups and settings are re-validated field by field; CSV export neutralises spreadsheet formulas.
 
 ## Copyright
