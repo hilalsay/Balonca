@@ -2,7 +2,7 @@ import { app } from './state.svelte';
 import { ingestText } from './ingest';
 import { listRemoteSubs, fetchRemoteSub, SubsApiError, SUBS_API_ENABLED, type RemoteList } from './ytsubs/api';
 import { baseLang, pickManual, pickSource } from './ytsubs/pick';
-import { serverTranslate } from './translate/server';
+import { isBrokenLine, serverTranslate } from './translate/server';
 import { TranslateError } from './translate/runner';
 import { AUTO_LANGS } from './settings';
 
@@ -26,6 +26,19 @@ export function pivotOrder(src: string, wanted: string[], open: readonly string[
   return out;
 }
 const FINISHED = ' (AI)';
+
+/**
+ * Finished machine translations that contain a broken line, plus the Turkish ones made from a broken English one
+ * (they copy its mistakes).
+ */
+export function brokenTracks<T extends { name: string; lang: string; cues: { text: string }[] }>(tracks: T[]): T[] {
+  const ai = tracks.filter((t) => t.name.endsWith(FINISHED));
+  const bad = ai.filter((t) => t.cues.some((c) => isBrokenLine(c.text)));
+  if (bad.some((t) => t.lang === PIVOT)) {
+    for (const t of ai) if (t.lang === PIVOT_TO && t.name.includes(`→ ${PIVOT} →`) && !bad.includes(t)) bad.push(t);
+  }
+  return bad;
+}
 
 class AutoSubs {
   jobs = $state<Job[]>([]);
@@ -59,7 +72,11 @@ class AutoSubs {
     this.jobs = [];
     if (!SUBS_API_ENABLED || !app.settings.autoSubs) return;
     const interrupted = app.tracks.filter((t) => t.name.endsWith(PARTIAL)).map((t) => t.lang);
-    if (!app.tracks.length || interrupted.length) await this.run(vid, interrupted.length ? interrupted : undefined);
+    // Machine translations saved by an older version may hold broken lines: remove and make them again.
+    const broken = brokenTracks(app.tracks);
+    for (const t of broken) app.removeTrack(t.id);
+    const redo = [...new Set([...interrupted, ...broken.map((t) => t.lang)])];
+    if (!app.tracks.length || redo.length) await this.run(vid, redo.length ? redo : undefined);
   }
 
   /**

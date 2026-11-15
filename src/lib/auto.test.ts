@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pivotOrder } from './auto.svelte';
+import { brokenTracks, pivotOrder } from './auto.svelte';
+import { isBrokenLine } from './translate/server';
 
 const all = ['tr', 'en', 'nl'];
 describe('pivotOrder', () => {
@@ -18,5 +19,25 @@ describe('pivotOrder', () => {
   it('does nothing for other languages', () => {
     expect(pivotOrder('tr', ['nl'], all)).toEqual(['nl']);
     expect(pivotOrder('de', ['en'], all)).toEqual(['en']);
+  });
+});
+
+describe('brokenTracks', () => {
+  const tr = (name: string, lang: string, ...texts: string[]) => ({ name, lang, cues: texts.map((text) => ({ text })) });
+  const nl = tr('Charlie', 'nl', 'Het is maar een kuil.');
+  const enBad = tr('Charlie → en (AI)', 'en', "It's just a ditch.”, “2”:”What does that matter?");
+  const enOk = tr('Charlie → en (AI)', 'en', "It's just a ditch.");
+  const trViaEn = tr('Charlie → en → tr (AI)', 'tr', 'Sadece bir çukur.');
+
+  it('finds saved machine translations with JSON pieces in them, and the Turkish made from them', () => {
+    expect(brokenTracks([nl, enBad, trViaEn])).toEqual([enBad, trViaEn]);
+    expect(brokenTracks([nl, enOk, trViaEn])).toEqual([]);
+  });
+  it('leaves the user\'s own subtitles alone', () => {
+    expect(brokenTracks([tr('mine.srt', 'en', 'a", "b')])).toEqual([]);
+  });
+  it('isBrokenLine matches the server check', () => {
+    expect(isBrokenLine('Sadece bir bataklık.", "2":"Ne fark eder?')).toBe(true);
+    expect(isBrokenLine('Ne fark eder?')).toBe(false);
   });
 });
