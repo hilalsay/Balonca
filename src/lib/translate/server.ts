@@ -19,6 +19,16 @@ const CODES: Record<string, TranslateError['code']> = {
   timeout: 'api',
 };
 
+/**
+ * A translated line that holds pieces of the model's JSON (`It's just a ditch.”, “2”:”What…`). Older server
+ * versions saved such lines; a track containing one is translated again. Same test as `isLeak` in
+ * server/translate.mjs.
+ */
+export function isBrokenLine(text: string): boolean {
+  const t = text.replace(/[“”„‟″〝〞＂]/g, '"');
+  return /"\s*\d+\s*"\s*:/.test(t) || /"\s*,\s*"/.test(t) || /^\s*[{[]?\s*"?\d+"?\s*:\s*"/.test(t);
+}
+
 /** Splits a byte stream into NDJSON events. Exported for tests. */
 export async function* readEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<ServerEvent> {
   const reader = body.getReader();

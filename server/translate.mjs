@@ -130,17 +130,64 @@ export function chatStream(url, body, { headers = {}, signal, timeoutMs = 240_00
   });
 }
 
+/** Curly and other look-alike double quotes, which models like to write instead of `"`. */
+const SMART_QUOTES = /[“”„‟″〝〞＂]/g;
+export const straightQuotes = (s) => s.replace(SMART_QUOTES, '"');
+
+/** The `{…}` part of a reply: drops ```json fences and any chatter before or after the object. */
+export function jsonPart(content) {
+  const s = String(content).replace(/```(?:json)?/gi, '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  return a >= 0 && b > a ? s.slice(a, b + 1) : s.trim();
+}
+
+/**
+ * A translated item that contains pieces of the batch's JSON (`…ditch.”, “2”:”What…`): the model wrote several
+ * items into one value. Such a reply cannot be trusted at all (the other keys are usually shifted by one).
+ */
+export const isLeak = (s) => {
+  const t = straightQuotes(String(s));
+  return /"\s*\d+\s*"\s*:/.test(t) || /"\s*,\s*"/.test(t) || /^\s*[{\[]?\s*"?\d+"?\s*:\s*"/.test(t);
+};
+
 /**
  * Every complete `"n": "text"` pair in a model reply, even when the JSON as a whole is broken (a model that closes
- * a string with a curly quote, or got cut off). Returns { "1": "…", … }.
+ * a string with a curly quote, or got cut off). Returns { "1": "…", … }. Fences and chatter around the object are
+ * ignored, and a reply that only parses once its curly quotes are made straight is read that way.
  */
 export function salvage(content) {
-  try { const o = JSON.parse(content); if (o && typeof o === 'object') return o; } catch {}
+  const body = jsonPart(content);
+  for (const c of [content, body, straightQuotes(body)]) {
+    try { const o = JSON.parse(c); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch {}
+  }
   const out = {};
-  for (const m of content.matchAll(/"(\d+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
+  for (const m of body.matchAll(/"(\d+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
     try { out[m[1]] = JSON.parse(`"${m[2]}"`); } catch {}
   }
   return out;
+}
+
+/**
+ * Checks a parsed reply against the batch it answers. Returns one translation (or null) per text, by key, never
+ * by position. The whole reply is thrown away (all null) when it shows that the model lost track of the items:
+ * an unknown key, an item that holds other items (`isLeak`), or two different sentences with the same translation
+ * (the usual sign of answers shifted by one). The caller then retries in smaller pieces.
+ */
+export function checkReply(obj, texts) {
+  const keys = texts.map((_, i) => String(i + 1));
+  const none = texts.map(() => null);
+  if (!obj || typeof obj !== 'object' || Object.keys(obj).some((k) => !keys.includes(k))) return none;
+  const vals = keys.map((k) => (typeof obj[k] === 'string' ? clean(obj[k]) : ''));
+  if (vals.some((v) => v && isLeak(v))) return none;
+  const seen = new Map();
+  for (let i = 0; i < vals.length; i++) {
+    const v = norm(vals[i]);
+    if (!v || texts[i].trim().split(/\s+/).length < 2) continue;
+    const j = seen.get(v);
+    if (j !== undefined && norm(texts[j]) !== norm(texts[i])) return none;
+    seen.set(v, i);
+  }
+  return vals.map((t) => (t && !isLooping(t) ? t : null));
 }
 
 /**
@@ -172,12 +219,7 @@ export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = 
       messages: [{ role: 'system', content: sys + extra },
         { role: 'user', content: JSON.stringify({ context, translate: Object.fromEntries(texts.map((t, i) => [String(i + 1), t])) }) }],
     }, signal);
-    const obj = salvage(content);
-    return texts.map((_, i) => {
-      const v = obj[String(i + 1)];
-      const t = typeof v === 'string' ? clean(v) : '';
-      return t && !isLooping(t) ? t : null;
-    });
+    return checkReply(salvage(content), texts);
   };
 
   /** Last resort for a single line: no JSON at all. */
@@ -190,7 +232,7 @@ export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = 
       ],
     }, signal);
     const t = clean(content.split('\n').map((l) => l.trim()).find(Boolean) ?? '').replace(/^["“'‘]+|["”'’]+$/g, '').trim();
-    return /\p{L}/u.test(t) && !isLooping(t) ? t : null;
+    return /\p{L}/u.test(t) && !isLooping(t) && !isLeak(t) ? t : null;
   };
 
   const isCopy = (t, src) => norm(t) === norm(src) && /\p{L}{3}/u.test(t);
@@ -319,6 +361,18 @@ export function parseModels(spec = '') {
 /** The model that writes text in `to`. */
 export const modelFor = (llm, to) => llm.models?.[to] ?? llm.model;
 
+/**
+ * A cached translation cut back to before the first batch that holds a broken item (one written by an older
+ * version that did not check replies), so that batch and everything after it is translated again.
+ */
+export function healed(out, units) {
+  if (!Array.isArray(out)) return [];
+  const bad = out.findIndex((t) => typeof t !== 'string' || isLeak(t));
+  if (bad < 0) return out;
+  const start = batches(units).find((b) => b.includes(bad))?.[0] ?? bad;
+  return out.slice(0, Math.min(bad, start));
+}
+
 export function createTranslateHandler({
   baseUrl = 'http://127.0.0.1:11434', model: defaultModel = 'gemma3:latest', models = {}, hostHeader = '', cacheDir = '',
   jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now,
@@ -339,6 +393,7 @@ export function createTranslateHandler({
     const units = toUnits(cues);
     const key = createHash('sha256').update(JSON.stringify([model, from, to, units.map((u) => u.text)])).digest('hex').slice(0, 32);
     const saved = (await cache.get(key)) ?? { out: [] };
+    saved.out = healed(saved.out, units);
     const complete = saved.out.length >= units.length;
     if (!complete && !allow(ip)) throw new ApiError(429, 'rate-limit');
 
