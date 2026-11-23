@@ -61,6 +61,7 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
   const useTinker = cfg.provider === 'tinker' && !!cfg.tinker?.key;
   const slot = semaphore(useTinker ? (cfg.concurrency ?? 16) : 1000, 2000);
   const spent = { day: dayOf(now()), usd: 0, calls: 0, fallbacks: 0, input: 0, output: 0 };
+  const thinkers = new Set(); // models that cannot switch thinking off
   let creditGoneUntil = 0; // after 402/403: Tinker is not asked again for an hour
   let lastError = '';
   const loaded = loadSpent(cfg.usageDir, spent);
@@ -78,6 +79,11 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
   async function tinker(body, signal, purpose) {
     // Callers name the model (TINKER_MODEL or TINKER_MODEL_<LANG>, see index.mjs); anything else gets the default.
     let req = toAnthropic(body, String(body.model ?? '').includes('/') ? body.model : cfg.tinker.model);
+    if (thinkers.has(req.model)) { // known to think: ask the way it accepts straight away
+      const { thinking, tools, tool_choice, ...rest } = req;
+      req = { ...rest, max_tokens: rest.max_tokens + 6000,
+        ...(tools ? { system: `${rest.system.replace(/\nGive your answer only through the "submit" tool\.$/, '')}\nReply with JSON only, no other text, matching this JSON schema: ${JSON.stringify(tools[0].input_schema)}` } : {}) };
+    }
     let noTool = 0;
     for (let attempt = 0; ; attempt++) {
       let res, data;
@@ -104,6 +110,16 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
         lastError = `tinker ${res.status}`;
         logError(`tinker refused (${res.status}): using the local model for an hour`);
         throw new ApiError(503, 'llm-credit');
+      }
+      // Some models always think first and refuse the switch: drop it and leave room for the thinking. A forced tool
+      // does not go together with thinking either: those models get the schema in the instructions instead.
+      if (res.status === 400 && /reasoning_effort is not supported/i.test(JSON.stringify(data?.error ?? '')) && req.thinking) {
+        const { thinking, tools, tool_choice, ...rest } = req;
+        req = { ...rest, max_tokens: rest.max_tokens + 6000,
+          ...(tools ? { system: `${rest.system.replace(/\nGive your answer only through the "submit" tool\.$/, '')}\nReply with JSON only, no other text, matching this JSON schema: ${JSON.stringify(tools[0].input_schema)}` } : {}) };
+        thinkers.add(req.model);
+        attempt--;
+        continue;
       }
       // Now and then the model answers in prose although the tool is required: ask again; the second time without the
       // tool, with the schema in the instructions (callers parse and check the JSON anyway).
