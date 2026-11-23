@@ -113,8 +113,11 @@ export function semaphore(limit, queueMax) {
 export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
   ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
+  parse = null, tts = null, nlpStatus = null,
 } = {}) {
   const limit = rateLimiter(ratePerMinute, now);
+  // Reading a text asks for one sentence at a time (speech, grammar): cheap requests with their own, higher limit.
+  const readLimit = rateLimiter(ratePerMinute * 8, now);
   const slot = semaphore(2, 4);
   const cache = new Map(); // key -> { at, value }
   const cached = async (key, make) => {
@@ -158,9 +161,22 @@ export function createHandler({
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
         return await sentence(req, res, ip);
       }
+      if (url.pathname === '/api/parse') {
+        if (!parse) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'POST') throw new ApiError(405, 'method');
+        if (!readLimit(ip)) throw new ApiError(429, 'rate-limit');
+        return await parse(req, res, ip);
+      }
+      if (url.pathname === '/api/tts') {
+        if (!tts) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'method');
+        if (!readLimit(ip)) throw new ApiError(429, 'rate-limit');
+        return await tts(req, res, url);
+      }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
+      if (url.pathname === '/api/nlp') return send(200, nlpStatus ? await nlpStatus() : { parse: [], tts: [] });
       if (url.pathname === '/api/health') {
-        return send(200, { ok: true, ytdlp: ytdlpInstalled, ...(llmStatus ? { llm: await llmStatus() } : {}) });
+        return send(200, { ok: true, ytdlp: ytdlpInstalled, ...(llmStatus ? { llm: await llmStatus() } : {}), ...(nlpStatus ? { nlp: await nlpStatus() } : {}) });
       }
       if (!limit(ip)) throw new ApiError(429, 'rate-limit');
 

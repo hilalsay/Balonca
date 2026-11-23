@@ -1,7 +1,7 @@
 import { DEFAULT_SETTINGS, type Settings } from './settings';
-import { TRACK_COLORS, uid, type SavedWord, type StoredTrack, type WordMeaning } from './types';
+import { TRACK_COLORS, uid, type SavedWord, type StoredTrack, type TextDoc, type WordMeaning } from './types';
 import { openBalonca, loadSettings, saveSettings, loadWords, loadKnown, saveKnown, type KnownWords, putWord, deleteWord, deleteLanguage, loadTracks, saveTracks,
-  getLastVideo, setLastVideo, exportBackup, parseBackup, importBackup, type Db } from './storage';
+  getLastVideo, setLastVideo, exportBackup, parseBackup, importBackup, loadTexts, putText, deleteText, TEXT_LIMIT, type Db } from './storage';
 import { parseSubtitles } from './subtitles';
 import { detectLangFromFilename } from './languages';
 import { makeWord, toggleWord, wordId } from './words/bags';
@@ -31,6 +31,9 @@ class AppState {
   visibleTracks = $derived(this.tracks.filter((t) => t.visible));
   /** Video id of the installed example, if this machine has one. */
   exampleId = $state<string | null>(null);
+  /** Texts of the reading mode, most recently read first. */
+  texts = $state<TextDoc[]>([]);
+  textById = $derived(new Map(this.texts.map((x) => [x.id, x])));
 
   private db: Db | null = null;
   private persistTracks = debounce(() => {
@@ -39,6 +42,13 @@ class AppState {
   private persistKnown = debounce(() => {
     if (this.db) void saveKnown(this.db, $state.snapshot(this.known) as KnownWords);
   }, 400);
+  private dirtyTexts = new Set<string>();
+  private persistTexts = debounce(() => {
+    const ids = [...this.dirtyTexts];
+    this.dirtyTexts.clear();
+    if (!this.db) return;
+    for (const id of ids) { const x = this.textById.get(id); if (x) void putText(this.db, $state.snapshot(x) as TextDoc); }
+  }, 500);
   private persistSettings = debounce(() => {
     if (this.db) void saveSettings(this.db, $state.snapshot(this.settings) as Settings);
   }, 300);
@@ -50,6 +60,7 @@ class AppState {
       this.settings = await loadSettings(this.db);
       this.words = await loadWords(this.db);
       this.known = await loadKnown(this.db);
+      this.texts = sortTexts(await loadTexts(this.db));
       this.applySettings(false);
       const last = await getLastVideo(this.db);
       if (last) await this.openVideo(last);
@@ -154,8 +165,8 @@ class AppState {
   }
 
   /** Saves the word if new, removes it if already saved. Returns true when it was added. */
-  toggleWord(args: { lang: string; word: string; ctx: string; trans?: { lang: string; text: string }[]; t: number }): boolean {
-    const w = makeWord({ ...args, vid: this.vid ?? undefined });
+  toggleWord(args: { lang: string; word: string; ctx: string; trans?: { lang: string; text: string }[]; t: number; doc?: string }): boolean {
+    const w = makeWord({ ...args, vid: args.doc ? undefined : this.vid ?? undefined });
     const { list, added } = toggleWord(this.words, w);
     this.words = list;
     if (this.db) void (added ? putWord(this.db, $state.snapshot(w) as SavedWord) : deleteWord(this.db, w.id));
@@ -170,8 +181,13 @@ class AppState {
     if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
   }
 
-  /** The saved sentence in `lang` from the video's own subtitles (no server); stores and returns it when found. */
+  /** The saved sentence in `lang` from the video's own subtitles or the text's translation (no server); stores and returns it when found. */
   async transFromTracks(word: SavedWord, lang: string): Promise<string | null> {
+    if (word.doc) {
+      const text = this.textById.get(word.doc)?.trans?.[lang]?.[word.t] ?? null;
+      if (text) this.setTrans(word.id, lang, text);
+      return text;
+    }
     if (!word.vid) return null;
     const tracks = word.vid === this.vid ? this.tracks : this.db ? await loadTracks(this.db, word.vid) : [];
     const text = lineAt(tracks as StoredTrack[], lang, word.t);
@@ -261,6 +277,7 @@ class AppState {
     const counts = await importBackup(this.db, backup, mode);
     this.words = await loadWords(this.db);
     this.known = await loadKnown(this.db);
+    this.texts = sortTexts(await loadTexts(this.db));
     if (mode === 'replace') {
       this.settings = await loadSettings(this.db);
       this.applySettings(false);
@@ -271,7 +288,50 @@ class AppState {
     return counts;
   }
 
+  // ------------------------------------------------------------------------------------------------------------
+  // Reading mode
+
+  /** Stores a new text and returns it. */
+  addText(x: { title: string; lang: string; body: string }): TextDoc {
+    const now = Date.now();
+    const doc: TextDoc = { id: uid(), title: x.title.trim().slice(0, 120), lang: x.lang, body: x.body.slice(0, TEXT_LIMIT), added: now, opened: now, pos: 0, done: 0 };
+    this.texts = [doc, ...this.texts];
+    if (this.db) void putText(this.db, doc);
+    return doc;
+  }
+
+  /** Changes a text (where the learner is, translations…); saved a moment later. */
+  updateText(id: string, patch: Partial<Omit<TextDoc, 'id'>>) {
+    const x = this.texts.find((d) => d.id === id);
+    if (!x) return;
+    Object.assign(x, patch);
+    this.dirtyTexts.add(id);
+    this.persistTexts();
+  }
+
+  /** One sentence's translation of a text. */
+  setTextTrans(id: string, lang: string, i: number, text: string) {
+    const x = this.texts.find((d) => d.id === id);
+    if (!x || !text) return;
+    const list = [...(x.trans?.[lang] ?? [])];
+    while (list.length < i) list.push(null);
+    list[i] = text;
+    this.updateText(id, { trans: { ...(x.trans ?? {}), [lang]: list } });
+  }
+
+  /** Opening a text moves it to the top of the list. */
+  touchText(id: string) {
+    this.updateText(id, { opened: Date.now() });
+    this.texts = sortTexts(this.texts);
+  }
+
+  removeText(id: string) {
+    this.texts = this.texts.filter((d) => d.id !== id);
+    if (this.db) void deleteText(this.db, id);
+  }
 }
+
+const sortTexts = (list: TextDoc[]) => [...list].sort((a, b) => b.opened - a.opened);
 
 export const app = new AppState();
 export type { Grade };

@@ -62,7 +62,7 @@ describe('backup', () => {
 
     const b = await fresh();
     const res = await importBackup(b, parseBackup(json), 'replace');
-    expect(res).toEqual({ words: 1, tracks: 1 });
+    expect(res).toEqual({ words: 1, tracks: 1, texts: 0 });
     expect((await loadSettings(b)).subStyle).toBe('outline');
     expect((await loadWords(b))[0].id).toBe('nl:huis');
     expect((await loadTracks(b, 'v1'))[0].cues[0].text).toBe('hoi');
@@ -73,7 +73,7 @@ describe('backup', () => {
     const incoming = parseBackup(JSON.stringify({
       app: 'balonca', version: 1, words: [word('huis'), word('boom')], tracks: [], settings: {},
     }));
-    expect(await importBackup(db, incoming, 'merge')).toEqual({ words: 1, tracks: 0 });
+    expect(await importBackup(db, incoming, 'merge')).toEqual({ words: 1, tracks: 0, texts: 0 });
     const all = await loadWords(db);
     expect(all).toHaveLength(2);
     expect(all.find((w) => w.id === 'nl:huis')!.ivl).toBe(10);
@@ -171,5 +171,50 @@ describe('known words ("I know this")', () => {
   it('older backups without known words still import', () => {
     const old = JSON.stringify({ app: 'balonca', version: 1, words: [], tracks: [] });
     expect(parseBackup(old).known).toEqual({});
+  });
+});
+
+describe('texts (reading mode)', () => {
+  const doc = { id: 't1', title: 'Een dag', lang: 'nl', body: 'Ik heet Sam. Ik woon in Gent.', added: 1, opened: 2, pos: 1, done: 1, trans: { tr: ['Benim adım Sam.', null] } };
+
+  it('are stored, exported, cleaned and imported (merge keeps this device’s progress)', async () => {
+    const { putText, loadTexts, cleanText } = await import('./index');
+    const a = await fresh();
+    await putText(a, doc);
+    expect(await loadTexts(a)).toEqual([doc]);
+    const backup = parseBackup(JSON.stringify(await exportBackup(a)));
+    expect(backup.texts).toEqual([doc]);
+
+    const b = await fresh();
+    await putText(b, { ...doc, pos: 0, done: 0 });
+    expect((await importBackup(b, backup, 'merge')).texts).toBe(0);
+    expect((await loadTexts(b))[0].pos).toBe(0);
+    expect((await importBackup(b, backup, 'replace')).texts).toBe(1);
+    expect((await loadTexts(b))[0].pos).toBe(1);
+
+    expect(cleanText({ id: 'x', body: '', lang: 'nl' })).toBeNull();
+    expect(cleanText({ id: 'x', body: 'hi', lang: 'not a lang' })).toBeNull();
+    expect(cleanText({ id: 'x', body: 'hi', lang: 'nl', trans: { tr: ['a', 5], 'x y': ['b'] }, pos: -3 })).toMatchObject({ pos: 0, trans: { tr: ['a', null] } });
+  });
+
+  it('a saved word remembers its text', () => {
+    const backup = parseBackup(JSON.stringify({ app: 'balonca', version: 1, tracks: [],
+      words: [{ w: 'sam', lang: 'nl', ctx: 'Ik heet Sam.', doc: 't1', t: 0 }] }));
+    expect(backup.words[0].doc).toBe('t1');
+    expect(backup.texts).toEqual([]);
+  });
+
+  it('a version 2 database gains the texts store and keeps its data', async () => {
+    const name = `v2-${Math.random()}`;
+    const v2 = await openDB(name, 2, { upgrade: (d) => {
+      d.createObjectStore('meta');
+      d.createObjectStore('words', { keyPath: 'id' }).createIndex('byLang', 'lang');
+      d.createObjectStore('tracks', { keyPath: 'id' }).createIndex('byVideo', 'vid');
+    } });
+    await v2.put('words', { id: 'nl:huis', w: 'huis', lang: 'nl', ctx: '', trans: [], t: 0, added: 1, reps: 0, ivl: 0, ease: 2.5, lapses: 0 });
+    v2.close();
+    const db = await openBalonca(name);
+    expect((await loadWords(db)).map((w) => w.id)).toEqual(['nl:huis']);
+    expect(db.objectStoreNames.contains('texts')).toBe(true);
   });
 });

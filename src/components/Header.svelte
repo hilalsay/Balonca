@@ -18,6 +18,7 @@
   const links = [
     ['home', 'nav.home'],
     ['watch', 'nav.watch'],
+    ['read', 'nav.read'],
     ['words', 'nav.words'],
     ['help', 'nav.help'],
   ] as const;

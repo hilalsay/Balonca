@@ -10,7 +10,8 @@
   const items: [string, MessageKey, IconName][] = [
     ['home', 'nav.home', 'home'],
     ['watch', 'nav.watch', 'tv'],
-    ['words', 'nav.words', 'cards'],
+    ['read', 'nav.read', 'book'],
+    ['words', 'nav.words.short', 'cards'],
     ['help', 'nav.help', 'help'],
   ];
   const due = $derived(reviewQueue(app.words).length);
@@ -33,7 +34,7 @@
   @media (max-width: 760px) and (orientation: portrait) {
     .bottom {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-      display: grid; grid-template-columns: repeat(4, 1fr);
+      display: grid; grid-template-columns: repeat(5, 1fr);
       height: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
       background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px);
       border-top: 1px solid var(--line); box-shadow: 0 -4px 20px rgb(30 20 60 / 0.06);
@@ -42,7 +43,8 @@
       font: 700 0.72rem var(--font-display); -webkit-tap-highlight-color: transparent; }
     a[aria-current='page'] { color: var(--accent); }
     a[aria-current='page'] .ic { background: var(--accent-soft); }
-    .ic { position: relative; display: grid; place-items: center; width: 56px; height: 30px; border-radius: 99px; transition: background 0.15s; }
+    .lbl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+    .ic { position: relative; display: grid; place-items: center; width: 52px; height: 30px; border-radius: 99px; transition: background 0.15s; }
     .badge { position: absolute; top: -4px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
       background: var(--pink); color: #1a1226; font: 800 0.68rem/18px var(--font-body); text-align: center; }
   }

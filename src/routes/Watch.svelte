@@ -6,7 +6,6 @@
   import WordsMini from '../components/WordsMini.svelte';
   import Tabs from '../components/Tabs.svelte';
   import AutoStatus from '../components/AutoStatus.svelte';
-  import WordPopover from '../components/WordPopover.svelte';
   import { wordPop } from '../lib/wordpop.svelte';
   import { autoSubs } from '../lib/auto.svelte';
   import { tour } from '../lib/tour.svelte';
@@ -113,7 +112,6 @@
     <AutoStatus />
   </div>
 
-  <WordPopover where="page" />
 
   <aside class="card side" class:expanded style:--video-h="{videoH}px">
     <button class="handle" onclick={() => { expanded = !expanded; autoOpened = false; }} aria-expanded={expanded} aria-label={t(expanded ? 'panel.collapse' : 'panel.expand')} title={t(expanded ? 'panel.collapse' : 'panel.expand')}>

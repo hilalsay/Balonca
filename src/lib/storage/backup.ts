@@ -1,4 +1,4 @@
-import type { SavedWord, StoredTrack } from '../types';
+import type { SavedWord, StoredTrack, TextDoc } from '../types';
 import { sanitizeSettings, type Settings } from '../settings';
 import { loadSettings, loadWords, getLastVideo, loadKnown, sanitizeKnown, type KnownWords } from './repo';
 import type { Db } from './db';
@@ -14,6 +14,7 @@ export interface Backup {
   tracks: StoredTrack[];
   lastVideo: string | null;
   known?: KnownWords; // optional: backups from before "I know this" have none
+  texts?: TextDoc[]; // optional: backups from before the reading mode have none
 }
 
 export class BackupError extends Error {
@@ -28,6 +29,7 @@ export async function exportBackup(db: Db): Promise<Backup> {
     app: 'balonca', version: BACKUP_VERSION, exportedAt: new Date().toISOString(),
     settings: await loadSettings(db), words: await loadWords(db),
     tracks: await db.getAll('tracks'), lastVideo: await getLastVideo(db), known: await loadKnown(db),
+    texts: await db.getAll('texts'),
   };
 }
 
@@ -41,7 +43,7 @@ function cleanWord(x: any): SavedWord | null {
     trans: Array.isArray(x.trans)
       ? x.trans.filter((r: any) => r && isStr(r.lang) && isStr(r.text)).slice(0, 4).map((r: any) => ({ lang: r.lang, text: r.text.slice(0, 500), ...(r.edited === true ? { edited: true } : {}) }))
       : [],
-    vid: isStr(x.vid) ? x.vid : undefined, t: isNum(x.t) ? x.t : 0, added: isNum(x.added) ? x.added : Date.now(),
+    vid: isStr(x.vid) ? x.vid : undefined, ...(isStr(x.doc) && x.doc.length <= 40 ? { doc: x.doc } : {}), t: isNum(x.t) ? x.t : 0, added: isNum(x.added) ? x.added : Date.now(),
     reps: isNum(x.reps) ? x.reps : 0, ivl: isNum(x.ivl) ? x.ivl : 0, ease: isNum(x.ease) ? x.ease : 2.5,
     lapses: isNum(x.lapses) ? x.lapses : 0, due: isNum(x.due) ? x.due : undefined,
     ...(cleanMeanings(x.meanings) ? { meanings: cleanMeanings(x.meanings) } : {}),
@@ -79,6 +81,25 @@ function cleanTrack(x: any): StoredTrack | null {
   };
 }
 
+export const TEXT_LIMIT = 60_000; // characters of one text
+
+/** A text from a backup file, field by field. */
+export function cleanText(x: any): TextDoc | null {
+  if (!x || !isStr(x.id) || x.id.length > 40 || !isStr(x.body) || !x.body.trim() || !isStr(x.lang) || !/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(x.lang)) return null;
+  const trans: TextDoc['trans'] = {};
+  if (x.trans && typeof x.trans === 'object') {
+    for (const [lang, list] of Object.entries(x.trans).slice(0, 6) as [string, any][]) {
+      if (/^[a-z]{2,3}$/.test(lang) && Array.isArray(list)) trans[lang] = list.slice(0, 5000).map((v: any) => (isStr(v) ? v.slice(0, 1000) : null));
+    }
+  }
+  return {
+    id: x.id, title: isStr(x.title) ? x.title.slice(0, 120) : '', lang: x.lang, body: x.body.slice(0, TEXT_LIMIT),
+    added: isNum(x.added) ? x.added : Date.now(), opened: isNum(x.opened) ? x.opened : 0,
+    pos: isNum(x.pos) ? Math.max(0, Math.floor(x.pos)) : 0, done: isNum(x.done) ? Math.max(0, Math.floor(x.done)) : 0,
+    ...(Object.keys(trans).length ? { trans } : {}),
+  };
+}
+
 /** Parses and validates a backup file. Never trusts its contents: every field is re-checked. */
 export function parseBackup(text: string): Backup {
   let data: any;
@@ -92,6 +113,7 @@ export function parseBackup(text: string): Backup {
     tracks: data.tracks.map(cleanTrack).filter((t: StoredTrack | null): t is StoredTrack => !!t),
     lastVideo: isStr(data.lastVideo) ? data.lastVideo : null,
     known: sanitizeKnown(data.known),
+    texts: Array.isArray(data.texts) ? data.texts.slice(0, 2000).map(cleanText).filter((t: TextDoc | null): t is TextDoc => !!t) : [],
   };
 }
 
@@ -99,9 +121,9 @@ export function parseBackup(text: string): Backup {
  * 'replace' wipes current data first; 'merge' keeps existing words (progress is not overwritten)
  * and adds anything missing, with imported tracks replacing same-id tracks.
  */
-export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge'): Promise<{ words: number; tracks: number }> {
-  const tx = db.transaction(['meta', 'words', 'tracks'], 'readwrite');
-  if (mode === 'replace') await Promise.all([tx.objectStore('words').clear(), tx.objectStore('tracks').clear()]);
+export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge'): Promise<{ words: number; tracks: number; texts: number }> {
+  const tx = db.transaction(['meta', 'words', 'tracks', 'texts'], 'readwrite');
+  if (mode === 'replace') await Promise.all([tx.objectStore('words').clear(), tx.objectStore('tracks').clear(), tx.objectStore('texts').clear()]);
 
   let words = 0;
   for (const w of b.words) {
@@ -110,6 +132,12 @@ export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge')
     words++;
   }
   for (const t of b.tracks) await tx.objectStore('tracks').put(t);
+  let texts = 0;
+  for (const t of b.texts ?? []) {
+    if (mode === 'merge' && (await tx.objectStore('texts').get(t.id))) continue; // keep this device's progress
+    await tx.objectStore('texts').put(t);
+    texts++;
+  }
   // Known words: replace takes the backup's, merge unites both.
   const mine = mode === 'merge' ? sanitizeKnown(await tx.objectStore('meta').get('known')) : {};
   const known: KnownWords = { ...mine };
@@ -120,5 +148,5 @@ export async function importBackup(db: Db, b: Backup, mode: 'replace' | 'merge')
     if (b.lastVideo) await tx.objectStore('meta').put(b.lastVideo, 'lastVideo');
   }
   await tx.done;
-  return { words, tracks: b.tracks.length };
+  return { words, tracks: b.tracks.length, texts };
 }

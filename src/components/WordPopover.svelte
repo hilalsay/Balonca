@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from './Icon.svelte';
   import { tick } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { wordPop } from '../lib/wordpop.svelte';
@@ -9,6 +10,7 @@
   import { wordId } from '../lib/words/bags';
   import type { WordMeaning } from '../lib/types';
   import type { MessageKey } from '../lib/i18n/tr';
+  import { speech } from '../lib/read/speech.svelte';
 
   /** Rendered twice: in the page, and inside the player for real fullscreen. Only one shows at a time. */
   let { where }: { where: 'page' | 'stage' } = $props();
@@ -80,7 +82,7 @@
 
   function toggleSave() {
     if (!w) return;
-    const added = app.toggleWord({ lang: w.lang, word: w.surface, ctx: w.ctx, trans: w.trans, t: w.t });
+    const added = app.toggleWord({ lang: w.lang, word: w.surface, ctx: w.ctx, trans: w.trans, t: w.t, doc: w.doc });
     if (added && meaning && to) app.setMeaning(wordId(w.lang, w.key), to, meaning);
     if (added && known) app.setKnown(w.lang, w.key, false); // in the bag now, so it is being learned
   }
@@ -106,6 +108,7 @@
   <div class="pop" class:sheet={place.startsWith('left:0')} use:portal bind:this={card} role="dialog" aria-label={t('pop.label', { word: w.surface })} style={place}>
     <div class="hd">
       <strong class="word" lang={w.lang}>{w.surface}</strong>
+      {#if speech.canRead(w.lang)}<button class="say" onclick={() => w && speech.say(w.lang, w.surface)} aria-label={t('speak.word')} title={t('speak.word')}><Icon name="speaker" size={18} /></button>{/if}
       {#if meaning?.lemma && meaning.lemma !== w.key}<span class="lemma" lang={w.lang}>→ {meaning.lemma}</span>{/if}
       <span class="st {status}">{t(`pop.status.${status}` as MessageKey)}</span>
       <button class="x" onclick={() => wordPop.close()} aria-label={t('common.close')}>✕</button>
@@ -138,6 +141,10 @@
           {/each}
         </div>
       {/if}
+    {/if}
+
+    {#if w.explain}
+      <button class="link explain" onclick={() => { const go = w?.explain; wordPop.close({ keepPaused: true }); go?.(); }}>📖 {t('pop.explain')}</button>
     {/if}
 
     <div class="actions">
@@ -174,6 +181,8 @@
   .st { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
   .st.learning { background: color-mix(in srgb, var(--pink) 22%, transparent); color: var(--text); }
   .st.known { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; align-self: center; }
+  .explain { justify-self: start; font-weight: 700; font-size: 0.9rem; padding: 4px 0; }
   .x { position: absolute; right: -6px; top: -6px; min-width: 36px; min-height: 36px; padding: 0; border: 0; background: none; color: var(--muted); }
   .q { margin: 0; font-size: 0.88rem; color: var(--muted); font-weight: 700; }
   .langs, .actions, .switch { display: flex; gap: var(--space-2); flex-wrap: wrap; }
