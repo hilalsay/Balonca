@@ -158,7 +158,7 @@ describe('system yt-dlp', () => {
   it('health tells whether yt-dlp is available', async () => {
     const yes = await call(createHandler({ ytdlpInstalled: true }), '/api/health');
     const no = await call(createHandler({ ytdlpInstalled: false }), '/api/health');
-    expect(JSON.parse(yes.text)).toEqual({ ok: true, ytdlp: true });
-    expect(JSON.parse(no.text)).toEqual({ ok: true, ytdlp: false });
+    expect(JSON.parse(yes.text)).toMatchObject({ ok: true, ytdlp: true });
+    expect(JSON.parse(no.text)).toMatchObject({ ok: true, ytdlp: false });
   });
 });

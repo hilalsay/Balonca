@@ -11,6 +11,8 @@ import { createInterface } from 'node:readline';
 import { ApiError, LANG_RE } from './lib.mjs';
 import { readBody } from './translate.mjs';
 import { logError } from './redact.mjs';
+import { windowCounter } from './limits.mjs';
+export { windowCounter };
 
 export const NLP_LIMITS = { sents: 80, chars: 600, total: 24_000, queue: 40 };
 
@@ -128,25 +130,6 @@ export function parseTtsQuery(url) {
   const text = speakable(raw);
   if (!text || text.length > NLP_LIMITS.chars) throw new ApiError(400, 'bad-request');
   return { lang, text };
-}
-
-/** Counts `amount` per key in a sliding window; `has` checks without counting. */
-export function windowCounter(windowMs, max, now = Date.now) {
-  const hits = new Map(); // key -> [{at, n}]
-  const recent = (key) => {
-    const t = now(), list = (hits.get(key) ?? []).filter((x) => t - x.at < windowMs);
-    if (list.length) hits.set(key, list); else hits.delete(key);
-    return list;
-  };
-  const used = (key) => recent(key).reduce((s, x) => s + x.n, 0);
-  return {
-    used,
-    has: (key, amount = 1) => used(key) + amount <= max,
-    add(key, amount = 1) {
-      const list = recent(key); list.push({ at: now(), n: amount }); hits.set(key, list);
-      if (hits.size > 5000) for (const k of hits.keys()) recent(k);
-    },
-  };
 }
 
 /** Speech limits per client: cached audio is cheap, new speech costs CPU and disk. Settable through env. */

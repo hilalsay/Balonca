@@ -577,4 +577,8 @@ export const en: Record<MessageKey, string> = {
   'help.a10': 'The sentence is split into its parts (subject, verb, object…) by a language parser (spaCy) on Balonca’s server. The explanations come from hand-written rules, not from an AI. For now Dutch, English, German, French and Spanish. Once in a while a part may be labelled wrongly.',
   'help.q11': 'There is no sound, or it sounds robotic',
   'help.a11': 'Reading settings (⚙) offer two voices: the Balonca voice (from the server, the same on every device) and the device voice (works offline). If one does not work, try the other. A phone in silent mode may stay quiet.',
+  'ytsubs.err.yt-busy': 'The subtitle queue is very long right now. Try again in a few minutes, or load the subtitle file yourself.',
+  'ytsubs.err.yt-blocked': 'YouTube is not giving subtitles right now. Videos opened before still work; for this one you can load the subtitle file yourself.',
+  'ytsubs.err.auto-translated': 'This is YouTube’s machine translation; Balonca translates it itself instead.',
+  'ytsubs.err.daily-videos': 'You reached today’s limit of new videos. Videos you opened before still work; try again tomorrow.',
 };

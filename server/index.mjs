@@ -8,6 +8,7 @@ import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
 import { createTranslateHandler, ollamaStatus, parseModels } from './translate.mjs';
 import { createDefineHandler } from './define.mjs';
 import { createSentenceHandler } from './sentence.mjs';
+import { createYouTube } from './youtube.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +55,15 @@ if (info) void info().then((i) => console.log(`reading mode: grammar ${i.parse.j
 else console.log('reading mode: grammar and voices off (no Python venv at ../pyenv)');
 const ttsCacheDir = process.env.TTS_CACHE_DIR ?? fileURLToPath(new URL('../.cache/tts', import.meta.url));
 
+// YouTube: permanent cache, a shared budget and a circuit breaker (youtube.mjs).
+const ytLimits = Object.fromEntries(Object.entries({
+  perMin: process.env.YT_MAX_PER_MIN, perHour: process.env.YT_MAX_PER_HOUR, perDay: process.env.YT_MAX_PER_DAY,
+  newVideosPerDay: process.env.YT_NEW_VIDEOS_PER_USER_DAY,
+}).filter(([, v]) => v).map(([k, v]) => [k, Number(v)]));
+const youtube = createYouTube({ run, cacheDir: process.env.YT_CACHE_DIR ?? fileURLToPath(new URL('../.cache/yt', import.meta.url)), limits: ytLimits });
+
 const handler = createHandler({
+  youtube,
   parse: parseWorker ? createParseHandler({ worker: parseWorker, info }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).
   tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, limits: {

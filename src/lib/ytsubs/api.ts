@@ -6,7 +6,8 @@ export const SUBS_API_ENABLED = BASE !== 'off';
 
 export type SubsErrorCode =
   | 'bad-request' | 'not-found' | 'bot-check' | 'yt-rate-limit' | 'busy' | 'rate-limit'
-  | 'timeout' | 'no-subs' | 'ytdlp-missing' | 'unreachable' | 'failed' | 'cancelled';
+  | 'timeout' | 'no-subs' | 'ytdlp-missing' | 'unreachable' | 'failed' | 'cancelled'
+  | 'yt-busy' | 'yt-blocked' | 'auto-translated' | 'daily-videos';
 
 export class SubsApiError extends Error {
   constructor(public readonly code: SubsErrorCode) { super(code); this.name = 'SubsApiError'; }
@@ -14,7 +15,8 @@ export class SubsApiError extends Error {
 
 export interface RemoteList { id: string; title: string; duration: number; tracks: RemoteTrack[] }
 
-const KNOWN = new Set<string>(['bad-request', 'not-found', 'bot-check', 'yt-rate-limit', 'busy', 'rate-limit', 'timeout', 'no-subs', 'ytdlp-missing']);
+const KNOWN = new Set<string>(['bad-request', 'not-found', 'bot-check', 'yt-rate-limit', 'busy', 'rate-limit', 'timeout', 'no-subs', 'ytdlp-missing',
+  'yt-busy', 'yt-blocked', 'auto-translated', 'daily-videos']);
 
 async function request(path: string, signal?: AbortSignal): Promise<Response> {
   let res: Response;
