@@ -1,5 +1,5 @@
-export type Route = 'home' | 'watch' | 'words' | 'help' | 'notfound';
-const ROUTES: Route[] = ['home', 'watch', 'words', 'help'];
+export type Route = 'home' | 'watch' | 'read' | 'words' | 'help' | 'notfound';
+const ROUTES: Route[] = ['home', 'watch', 'read', 'words', 'help'];
 
 function parse() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -21,3 +21,6 @@ addEventListener('hashchange', () => {
 });
 
 export const watchUrl = (id: string, t = 0) => `#/watch?v=${id}${t ? `&t=${Math.max(0, Math.floor(t))}` : ''}`;
+
+/** A text in the reading mode, optionally at sentence `s`; without an id, the list of texts. */
+export const readUrl = (id?: string, s?: number) => (id ? `#/read?id=${encodeURIComponent(id)}${s ? `&s=${s}` : ''}` : '#/read');

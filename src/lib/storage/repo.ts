@@ -1,4 +1,4 @@
-import type { SavedWord, StoredTrack } from '../types';
+import type { SavedWord, StoredTrack, TextDoc } from '../types';
 import { DEFAULT_SETTINGS, sanitizeSettings, type Settings } from '../settings';
 import type { Db } from './db';
 
@@ -59,3 +59,7 @@ export async function listVideos(db: Db): Promise<{ vid: string; tracks: number 
   for (const t of await db.getAll('tracks')) counts.set(t.vid, (counts.get(t.vid) ?? 0) + 1);
   return [...counts].map(([vid, tracks]) => ({ vid, tracks }));
 }
+
+export const loadTexts = (db: Db): Promise<TextDoc[]> => db.getAll('texts');
+export const putText = (db: Db, t: TextDoc) => db.put('texts', JSON.parse(JSON.stringify(t)));
+export const deleteText = (db: Db, id: string) => db.delete('texts', id);

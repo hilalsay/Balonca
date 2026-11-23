@@ -16,6 +16,16 @@ export interface Settings {
   autoTranslate: 'ask' | AutoLang; // then: ask which language to translate into, or always use this one
   meaningLang: '' | AutoLang; // language word meanings were last shown in ('' = ask)
   colorWords: boolean; // mark words in subtitles by how well the learner knows them
+  mode: '' | 'video' | 'text'; // the way of learning chosen on the home page ('' = not chosen yet)
+  // Reading mode
+  readRate: number; // speech speed, 0.5-1.5
+  readEngine: 'auto' | 'server' | 'device'; // whose voice reads: Balonca's server, the device, or the best available
+  readVoices: Record<string, string>; // the device voice picked per language (voiceURI)
+  readSize: number; // text size, px
+  readHide: boolean; // listening practice: sentences stay hidden until they have been heard
+  readTrans: boolean; // show the translation under every sentence
+  readLoop: boolean; // repeat the current sentence instead of going on
+  readHint: boolean; // the "how it works" card above a text
 }
 
 /** Languages offered for translation and word meanings. */
@@ -37,6 +47,15 @@ export const DEFAULT_SETTINGS: Settings = {
   autoTranslate: 'ask',
   meaningLang: '',
   colorWords: true,
+  mode: '',
+  readRate: 1,
+  readEngine: 'auto',
+  readVoices: {},
+  readSize: 20,
+  readHide: false,
+  readTrans: false,
+  readLoop: false,
+  readHint: true,
 };
 
 const clamp = (n: unknown, lo: number, hi: number, d: number) =>
@@ -64,5 +83,23 @@ export function sanitizeSettings(raw: unknown): Settings {
     autoTranslate: oneOf(r.autoTranslate, ['ask', ...AUTO_LANGS] as const, d.autoTranslate),
     meaningLang: oneOf(r.meaningLang, ['', ...AUTO_LANGS] as const, d.meaningLang),
     colorWords: bool(r.colorWords, d.colorWords),
+    mode: oneOf(r.mode, ['', 'video', 'text'] as const, d.mode),
+    readRate: clamp(r.readRate, 0.5, 1.5, d.readRate),
+    readEngine: oneOf(r.readEngine, ['auto', 'server', 'device'] as const, d.readEngine),
+    readVoices: voices(r.readVoices),
+    readSize: clamp(r.readSize, 14, 34, d.readSize),
+    readHide: bool(r.readHide, d.readHide),
+    readTrans: bool(r.readTrans, d.readTrans),
+    readLoop: bool(r.readLoop, d.readLoop),
+    readHint: bool(r.readHint, d.readHint),
   };
+}
+
+function voices(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!v || typeof v !== 'object') return out;
+  for (const [lang, uri] of Object.entries(v as Record<string, unknown>).slice(0, 40)) {
+    if (/^[a-z]{2,3}$/.test(lang) && typeof uri === 'string' && uri.length <= 200) out[lang] = uri;
+  }
+  return out;
 }

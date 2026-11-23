@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { SavedWord, StoredTrack } from '../types';
+import type { SavedWord, StoredTrack, TextDoc } from '../types';
 import { migrateLegacy } from './legacy';
 
 export interface BalonDB extends DBSchema {
@@ -8,15 +8,19 @@ export interface BalonDB extends DBSchema {
   meta: { key: string; value: unknown };
   words: { key: string; value: SavedWord; indexes: { byLang: string } };
   tracks: { key: string; value: StoredTrack; indexes: { byVideo: string } };
+  /** v3: texts for the reading mode. */
+  texts: { key: string; value: TextDoc };
 }
 
 export type Db = IDBPDatabase<BalonDB>;
 export const DB_NAME = 'balonca';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export function openBalonca(name = DB_NAME): Promise<Db> {
   return openDB<BalonDB>(name, DB_VERSION, {
     async upgrade(db, oldVersion, _newVersion, tx) {
+      if (oldVersion < 3) db.createObjectStore('texts', { keyPath: 'id' });
+      if (oldVersion >= 2) return;
       db.createObjectStore('meta');
       db.createObjectStore('words', { keyPath: 'id' }).createIndex('byLang', 'lang');
       db.createObjectStore('tracks', { keyPath: 'id' }).createIndex('byVideo', 'vid');

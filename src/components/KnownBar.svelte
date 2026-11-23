@@ -2,9 +2,8 @@
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n/index.svelte';
   import { tokenize } from '../lib/words/tokenize';
-  import type { StoredTrack } from '../lib/types';
-
-  let { track }: { track: StoredTrack } = $props();
+  /** A subtitle track, or a text's sentences (reading mode). */
+  let { track }: { track: { lang: string; cues: { text: string }[] } } = $props();
 
   // The distinct words of the video (its own language), worked out once per track.
   const keys = $derived.by(() => {

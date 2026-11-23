@@ -8,6 +8,9 @@ import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
 import { createTranslateHandler, ollamaStatus, parseModels } from './translate.mjs';
 import { createDefineHandler } from './define.mjs';
 import { createSentenceHandler } from './sentence.mjs';
+import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '127.0.0.1'; // keep it behind a reverse proxy
@@ -38,7 +41,23 @@ if (llmOn) {
 const cacheDir = process.env.TRANSLATE_CACHE_DIR ?? new URL('../.cache/translations', import.meta.url).pathname;
 const defineCacheDir = process.env.DEFINE_CACHE_DIR ?? new URL('../.cache/definitions', import.meta.url).pathname;
 
+// Reading mode: grammar (spaCy) and speech (Piper) from a Python venv next to the server (see README "Reading mode").
+// NLP_PYTHON=off disables both.
+const python = process.env.NLP_PYTHON ?? fileURLToPath(new URL('../pyenv/bin/python', import.meta.url));
+const nlpOn = python !== 'off' && existsSync(python);
+const nlpScript = fileURLToPath(new URL('./nlp.py', import.meta.url));
+const nlpEnv = { VOICES_DIR: process.env.VOICES_DIR ?? fileURLToPath(new URL('../voices', import.meta.url)) };
+const parseWorker = nlpOn ? pyWorker({ python, script: nlpScript, args: ['parse'], env: { ...nlpEnv, NLP_PRELOAD: process.env.NLP_PRELOAD ?? 'nl' } }) : null;
+const ttsWorker = nlpOn ? pyWorker({ python, script: nlpScript, args: ['tts'], env: { ...nlpEnv, NLP_PRELOAD: process.env.NLP_PRELOAD ?? 'nl' } }) : null;
+const info = parseWorker ? nlpInfo(parseWorker) : null;
+if (info) void info().then((i) => console.log(`reading mode: grammar ${i.parse.join(',') || 'none'}; voices ${i.tts.join(',') || 'none'}`));
+else console.log('reading mode: grammar and voices off (no Python venv at ../pyenv)');
+const ttsCacheDir = process.env.TTS_CACHE_DIR ?? fileURLToPath(new URL('../.cache/tts', import.meta.url));
+
 const handler = createHandler({
+  parse: parseWorker ? createParseHandler({ worker: parseWorker, info }) : null,
+  tts: ttsWorker ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir }) : null,
+  nlpStatus: info,
   translate: llmOn ? createTranslateHandler({ ...llm, cacheDir, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12) }) : null,
   define: llmOn ? createDefineHandler({ llm, cacheDir: defineCacheDir }) : null,
   sentence: llmOn ? createSentenceHandler({ llm, cacheDir: defineCacheDir }) : null,

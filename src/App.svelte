@@ -3,6 +3,7 @@
   import Toasts from './components/Toasts.svelte';
   import BottomNav from './components/BottomNav.svelte';
   import Tour from './components/Tour.svelte';
+  import WordPopover from './components/WordPopover.svelte';
   import { tour } from './lib/tour.svelte';
   import Home from './routes/Home.svelte';
   import NotFound from './routes/NotFound.svelte';
@@ -14,6 +15,7 @@
   // Heavy pages are separate chunks, fetched only when first visited.
   const lazy = {
     watch: () => import('./routes/Watch.svelte'),
+    read: () => import('./routes/Read.svelte'),
     words: () => import('./routes/Words.svelte'),
     help: () => import('./routes/Help.svelte'),
   } as const;
@@ -30,7 +32,16 @@
   const Watch = $derived(loaded.watch);
 
   // First visit only: offer a short tour (never started on its own; always available from Home, Help, Settings).
-  $effect(() => { if (app.ready) { const h = setTimeout(() => tour.maybeOffer(), 900); return () => clearTimeout(h); } });
+  // The way of learning in use (home page puts it first and offers to continue there).
+  $effect(() => {
+    const r = router.route;
+    if (!app.ready) return;
+    const mode = r === 'watch' ? 'video' : r === 'read' ? 'text' : null;
+    if (mode && app.settings.mode !== mode) app.setSetting('mode', mode);
+  });
+
+  // The tour shows the video mode, so it is offered when someone first opens the player.
+  $effect(() => { if (app.ready && router.route === 'watch') { const h = setTimeout(() => tour.maybeOffer(), 900); return () => clearTimeout(h); } });
   const Page = $derived(router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 
@@ -46,6 +57,7 @@
         <div class="page"><Page /></div>
       {/key}
     {/if}
+    <WordPopover where="page" />
   {/if}
 </main>
 <footer class:on-watch={router.route === 'watch'}><small class="muted">{t('footer.note')}</small></footer>

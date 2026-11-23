@@ -1,11 +1,13 @@
 <script lang="ts">
+  import Icon from './Icon.svelte';
   import WordMeaning from './WordMeaning.svelte';
   import ConfirmButton from './ConfirmButton.svelte';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n/index.svelte';
   import { tokenize } from '../lib/words/tokenize';
   import { isDue, isLearned } from '../lib/srs/scheduler';
-  import { watchUrl } from '../lib/router.svelte';
+  import { watchUrl, readUrl } from '../lib/router.svelte';
+  import { speech } from '../lib/read/speech.svelte';
   import { DEFINE_ENABLED } from '../lib/words/define';
   import type { SavedWord } from '../lib/types';
   import { shownLang, SENTENCE_ENABLED, SentenceError } from '../lib/words/sentence';
@@ -72,6 +74,7 @@
 <article class="wc" class:open>
   <div class="top">
     <strong class="w" lang={word.lang}>{word.w}</strong>
+    {#if speech.canRead(word.lang)}<button class="say" onclick={() => speech.say(word.lang, word.w)} aria-label={t('speak.word')} title={t('speak.word')}><Icon name="speaker" size={18} /></button>{/if}
     {#if learned}<span class="badge good">✓ {t('words.learned.one')}</span>
     {:else if due}<span class="badge due">{t('words.due.one')}</span>
     {:else if !word.reps}<span class="badge new">{t('words.new')}</span>{/if}
@@ -103,6 +106,9 @@
         <a class="play" href={watchUrl(word.vid, word.t)} aria-label={t('words.play', { time: fmt(word.t) })}>▶ <span class="long">{t('words.watch')} · </span>{fmt(word.t)}</a>
       {/if}
     {/if}
+    {#if word.doc && app.textById.has(word.doc)}
+      <a class="play" href={readUrl(word.doc, word.t)} aria-label={t('words.toText.aria', { title: app.textById.get(word.doc)?.title ?? '' })}>📖 <span class="long">{t('words.toText')}</span><span class="short">{t('words.toText.short')}</span></a>
+    {/if}
     <span class="grow"></span>
     <button class="fix" class:on={fixing} onclick={() => (fixing ? (fixing = false) : startFix())} aria-expanded={fixing} aria-label={t('fix.open')} title={t('fix.open')}>✏️</button>
     <ConfirmButton onconfirm={() => app.removeWord(word.id)} label={t('words.remove', { word: word.w })}>✕</ConfirmButton>
@@ -126,6 +132,7 @@
 </article>
 
 <style>
+  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 32px; min-height: 32px; padding: 0; border-radius: 50%; font-size: 0.9rem; line-height: 1; }
   .wc { display: grid; gap: 6px; padding: var(--space-3); border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
   .wc.open { border-color: var(--accent); }
   .top { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }

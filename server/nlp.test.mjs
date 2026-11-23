@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pyWorker, parseParseRequest, parseTtsQuery, createParseHandler, createTtsHandler, pruneDir } from './nlp.mjs';
+
+/** A stand-in for the Python worker: answers each JSON line with `answer(req)`. */
+function fakeSpawn(answer, log = []) {
+  return () => {
+    const c = new EventEmitter();
+    c.stdin = new PassThrough(); c.stdout = new PassThrough(); c.stderr = new PassThrough();
+    let buf = '';
+    c.stdin.on('data', (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const req = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+        log.push(req);
+        Promise.resolve(answer(req, c)).then((a) => a && c.stdout.write(`${JSON.stringify({ id: req.id, ...a })}\n`));
+      }
+    });
+    c.kill = () => c.emit('exit', 0);
+    return c;
+  };
+}
+
+/** A tiny response object that records what the handler sent. */
+function res() {
+  const r = new PassThrough();
+  r.status = 0; r.headers = {}; r.body = Buffer.alloc(0);
+  r.writeHead = (s, h) => { r.status = s; r.headers = h ?? {}; };
+  r.on('data', (d) => { r.body = Buffer.concat([r.body, d]); });
+  r.done = new Promise((ok) => r.on('finish', ok));
+  return r;
+}
+const req = (body, headers = {}) => { const q = new PassThrough(); q.headers = headers; q.method = 'POST'; q.end(body); return q; };
+
+describe('pyWorker', () => {
+  it('matches answers to requests and starts the process once', async () => {
+    let starts = 0;
+    const spawn = fakeSpawn((r) => ({ ok: true, echo: r.x }));
+    const w = pyWorker({ python: 'py', script: 's', spawnImpl: (...a) => { starts++; return spawn(...a); } });
+    const [a, b] = await Promise.all([w.call({ x: 1 }), w.call({ x: 2 })]);
+    expect([a.echo, b.echo]).toEqual([1, 2]);
+    expect(starts).toBe(1);
+  });
+  it('turns worker errors into API errors and recovers after a crash', async () => {
+    let n = 0;
+    const w = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn((r, c) => {
+      n++;
+      if (r.op === 'crash') { c.emit('exit', 1); return null; }
+      return r.op === 'bad' ? { ok: false, error: 'unsupported-lang' } : { ok: true };
+    }) });
+    await expect(w.call({ op: 'bad' })).rejects.toMatchObject({ status: 422, code: 'unsupported-lang' });
+    await expect(w.call({ op: 'crash' })).rejects.toMatchObject({ code: 'nlp-crashed' });
+    await expect(w.call({ op: 'fine' })).resolves.toMatchObject({ ok: true });
+    expect(n).toBe(3);
+  });
+  it('gives up after too many restarts', async () => {
+    const w = pyWorker({ python: 'py', script: 's', maxRestarts: 2, spawnImpl: fakeSpawn((r, c) => { c.emit('exit', 1); return null; }) });
+    await expect(w.call({})).rejects.toMatchObject({ code: 'nlp-crashed' });
+    await expect(w.call({})).rejects.toMatchObject({ code: 'nlp-crashed' });
+    await expect(w.call({})).rejects.toMatchObject({ code: 'nlp-unavailable' });
+  });
+  it('times out', async () => {
+    const w = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn(() => null) });
+    await expect(w.call({}, 20)).rejects.toMatchObject({ code: 'timeout' });
+  });
+});
+
+describe('requests', () => {
+  it('validates /api/parse bodies', () => {
+    expect(parseParseRequest(JSON.stringify({ lang: 'NL', sents: [' Ik  ben hier. '] }))).toEqual({ lang: 'nl', sents: ['Ik ben hier.'] });
+    for (const bad of ['nope', '{}', JSON.stringify({ lang: 'nl', sents: [] }), JSON.stringify({ lang: 'n l', sents: ['a'] }),
+      JSON.stringify({ lang: 'nl', sents: [''] }), JSON.stringify({ lang: 'nl', sents: Array(81).fill('a') })]) {
+      expect(() => parseParseRequest(bad)).toThrow();
+    }
+  });
+  it('validates /api/tts queries', () => {
+    expect(parseTtsQuery(new URL('http://x/api/tts?lang=nl&text=Hallo%20%20daar'))).toEqual({ lang: 'nl', text: 'Hallo daar' });
+    expect(() => parseTtsQuery(new URL('http://x/api/tts?lang=nl&text='))).toThrow();
+    expect(() => parseTtsQuery(new URL(`http://x/api/tts?lang=nl&text=${'a'.repeat(601)}`))).toThrow();
+  });
+});
+
+describe('handlers', () => {
+  const info = async () => ({ parse: ['nl'], tts: ['nl'] });
+
+  it('parses only sentences it has not seen', async () => {
+    const log = [];
+    const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn((r) => ({ ok: true, docs: r.sents.map((s) => [{ t: s }]) }), log) });
+    const h = createParseHandler({ worker, info });
+    const r1 = res(); await h(req(JSON.stringify({ lang: 'nl', sents: ['A.', 'B.'] })), r1); await r1.done;
+    const r2 = res(); await h(req(JSON.stringify({ lang: 'nl', sents: ['B.', 'C.'] })), r2); await r2.done;
+    expect(JSON.parse(r2.body).docs).toEqual([[{ t: 'B.' }], [{ t: 'C.' }]]);
+    expect(log.map((x) => x.sents)).toEqual([['A.', 'B.'], ['C.']]);
+    await expect(h(req(JSON.stringify({ lang: 'tr', sents: ['Merhaba.'] })), res())).rejects.toMatchObject({ code: 'unsupported-lang' });
+  });
+
+  it('speaks once per sentence, caches on disk and answers ranges', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'tts-'));
+    const log = [];
+    const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn(async (r) => { await writeFile(r.out, 'RIFFxxxxWAVEdata'); return { ok: true }; }, log) });
+    const h = createTtsHandler({ worker, info, cacheDir: dir });
+    const get = async (headers = {}) => {
+      const q = new PassThrough(); q.headers = headers; q.method = 'GET'; q.end();
+      const r = res(); await h(q, r, new URL('http://x/api/tts?lang=nl&text=Hallo')); await r.done; return r;
+    };
+    const [a, b] = await Promise.all([get(), get()]);
+    expect(a.status).toBe(200);
+    expect(String(b.body)).toBe('RIFFxxxxWAVEdata');
+    expect(a.headers['content-type']).toBe('audio/wav');
+    expect(log.filter((x) => x.op === 'tts')).toHaveLength(1);
+    const part = await get({ range: 'bytes=0-3' });
+    expect(part.status).toBe(206);
+    expect(String(part.body)).toBe('RIFF');
+    expect(part.headers['content-range']).toBe('bytes 0-3/16');
+    expect((await readdir(dir)).filter((f) => f.endsWith('.wav'))).toHaveLength(1);
+  });
+
+  it('prunes the oldest audio over the size limit', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'prune-'));
+    for (const n of ['a', 'b', 'c']) { await writeFile(path.join(dir, `${n}.wav`), 'x'.repeat(100)); await new Promise((r) => setTimeout(r, 15)); }
+    await pruneDir(dir, 150);
+    expect((await readdir(dir)).sort()).toEqual(['c.wav']);
+  });
+});
