@@ -140,6 +140,7 @@ export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
   ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
   parse = null, tts = null, nlpStatus = null, publicOrigin = '', parsePerMinute = 60, youtube = null, appConfig = { pivot: 'en' },
+  auth = null, sync = null, // accounts (auth.mjs, sync.mjs): with them, every route but health needs a signed-in user
 } = {}) {
   // All YouTube calls: cache, shared budget, circuit breaker (youtube.mjs). Without a cache dir: memory only.
   const yt = youtube ?? createYouTube({ run, limits: { gapMs: [0, 0] } });
@@ -160,7 +161,20 @@ export function createHandler({
       if (req.method === 'OPTIONS') return send(204, '');
       const url = new URL(req.url ?? '/', 'http://x');
       if (url.pathname !== '/api/health') checkSource(req, { publicOrigin, allowedOrigins });
-      const ip = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
+      const addr = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
+      // Signed in: limits count per user (a school or dorm network shares one address), else per address.
+      let user = null;
+      if (auth && url.pathname !== '/api/health') {
+        if (url.pathname === '/api/me' || url.pathname.startsWith('/api/auth/')) { if (await auth.route(req, res, url, addr)) return; }
+        user = auth.requireUser(req);
+        if (!user) throw new ApiError(401, 'login-required');
+      }
+      const ip = user ? `u${user.id}` : addr;
+      if (url.pathname === '/api/sync') {
+        if (!sync || !user) throw new ApiError(404, 'not-found-route');
+        if (!limit(ip)) throw new ApiError(429, 'rate-limit');
+        return await sync(req, res, url, user);
+      }
       if (url.pathname === '/api/translate') {
         if (!translate) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
