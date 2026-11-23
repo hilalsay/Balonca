@@ -139,7 +139,7 @@ export function checkSource(req, { publicOrigin = '', allowedOrigins = [] } = {}
 export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
   ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
-  parse = null, tts = null, nlpStatus = null, publicOrigin = '', parsePerMinute = 60, youtube = null,
+  parse = null, tts = null, nlpStatus = null, publicOrigin = '', parsePerMinute = 60, youtube = null, appConfig = { pivot: 'en' },
 } = {}) {
   // All YouTube calls: cache, shared budget, circuit breaker (youtube.mjs). Without a cache dir: memory only.
   const yt = youtube ?? createYouTube({ run, limits: { gapMs: [0, 0] } });
@@ -191,6 +191,7 @@ export function createHandler({
         return await tts(req, res, url, ip); // limits of its own: cached audio vs. new speech
       }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
+      if (url.pathname === '/api/config') return send(200, appConfig);
       if (url.pathname === '/api/nlp') return send(200, nlpStatus ? await nlpStatus() : { parse: [], tts: [] });
       if (url.pathname === '/api/health') {
         return send(200, { ok: true, ytdlp: ytdlpInstalled, youtube: yt.status(), ...(llmStatus ? { llm: await llmStatus() } : {}), ...(nlpStatus ? { nlp: await nlpStatus() } : {}) });

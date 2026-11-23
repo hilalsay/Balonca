@@ -2,7 +2,7 @@ import { app } from './state.svelte';
 import { ingestText } from './ingest';
 import { listRemoteSubs, fetchRemoteSub, SubsApiError, SUBS_API_ENABLED, type RemoteList } from './ytsubs/api';
 import { baseLang, pickManual, pickSource } from './ytsubs/pick';
-import { isBrokenLine, serverTranslate } from './translate/server';
+import { isBrokenLine, serverTranslate, serverConfig } from './translate/server.svelte';
 import { TranslateError } from './translate/runner';
 import { AUTO_LANGS } from './settings';
 
@@ -121,7 +121,8 @@ class AutoSubs {
       const auto = app.settings.autoTranslate;
       const wanted = targets ?? (auto === 'ask' ? [] : [auto]);
       const open = this.offerable();
-      for (const lang of pivotOrder(source.lang, wanted.filter((l) => open.includes(l)), open)) {
+      const chosen = wanted.filter((l) => open.includes(l));
+      for (const lang of serverConfig.pivot === 'en' ? pivotOrder(source.lang, chosen, open) : chosen) {
         if (!alive()) return;
         const job = this.add({ kind: 'target', lang, phase: 'translate' });
         // A hand-made YouTube subtitle in the target language beats any machine translation.
@@ -136,7 +137,7 @@ class AutoSubs {
         }
 
         // Turkish comes out better from the English translation than straight from e.g. Dutch.
-        const via = lang === PIVOT_TO && source.lang !== PIVOT ? app.tracks.find((t) => t.lang === PIVOT && !t.name.endsWith(PARTIAL) && t.cues.length) : undefined;
+        const via = serverConfig.pivot === 'en' && lang === PIVOT_TO && source.lang !== PIVOT ? app.tracks.find((t) => t.lang === PIVOT && !t.name.endsWith(PARTIAL) && t.cues.length) : undefined;
         const from = via ?? source;
         const track = app.addCues([], `${source.name} → ${via ? `${PIVOT} → ` : ''}${lang}${PARTIAL}`, lang);
         try {

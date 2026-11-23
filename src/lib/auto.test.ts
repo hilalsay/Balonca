@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { brokenTracks, pivotOrder } from './auto.svelte';
-import { isBrokenLine } from './translate/server';
+import { isBrokenLine } from './translate/server.svelte';
 
 const all = ['tr', 'en', 'nl'];
 describe('pivotOrder', () => {

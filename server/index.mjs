@@ -1,11 +1,16 @@
 import http from 'node:http';
+
+// Secrets (TINKER_API_KEY …) come from a root-made file readable only by this user, never from the repository or the
+// pm2 config (pm2 saves its env to disk). Variables already set win.
+try { process.loadEnvFile(process.env.BALONCA_ENV_FILE ?? '/etc/balonca.env'); } catch { /* no file: fine */ }
 import net from 'node:net';
 
 // Node gives each address only 250 ms when it races IPv4/IPv6 ("happy eyeballs"); from this server Wiktionary often
 // needs a little longer, which made about 1 in 10 lookups fail with ETIMEDOUT. Give a connection a fair chance.
 net.setDefaultAutoSelectFamilyAttemptTimeout(2500);
 import { checkYtDlp, createHandler, runYtDlp } from './lib.mjs';
-import { createTranslateHandler, ollamaStatus, parseModels } from './translate.mjs';
+import { chatStream, createTranslateHandler, ollamaStatus, parseModels } from './translate.mjs';
+import { createLlm, TINKER_DEFAULT_URL } from './llm/index.mjs';
 import { createDefineHandler } from './define.mjs';
 import { createSentenceHandler } from './sentence.mjs';
 import { createYouTube } from './youtube.mjs';
@@ -39,6 +44,24 @@ if (llmOn) {
   const st = await ollamaStatus(llm);
   console.log(st.ok ? `translation: ${llm.model} at ${llm.baseUrl}` : `WARNING: Ollama model "${llm.model}" not reachable at ${llm.baseUrl}; translation requests will fail until it is.`);
 }
+// Who writes: Tinker (LLM_PROVIDER=tinker and a key) with the local Ollama as fallback, or Ollama alone.
+const env = process.env;
+const tinkerModels = Object.fromEntries(Object.entries(env).filter(([k, v]) => /^TINKER_MODEL_[A-Z]{2,3}$/.test(k) && v).map(([k, v]) => [k.slice(13).toLowerCase(), v]));
+const llmLayer = createLlm({
+  provider: env.LLM_PROVIDER ?? 'ollama', fallback: env.LLM_FALLBACK ?? 'ollama',
+  tinker: { url: env.TINKER_BASE_URL || TINKER_DEFAULT_URL, key: env.TINKER_API_KEY ?? '', model: env.TINKER_MODEL || 'thinkingmachines/Inkling', models: tinkerModels },
+  ollama: { model: llm.model, models: llm.models, chat: chatStream },
+  concurrency: Number(env.LLM_CONCURRENCY ?? 16), dailyBudgetUsd: Number(env.LLM_DAILY_BUDGET_USD ?? 5),
+  priceIn: Number(env.LLM_PRICE_IN ?? 1.87), priceOut: Number(env.LLM_PRICE_OUT ?? 4.68),
+  usageDir: env.LLM_USAGE_DIR ?? fileURLToPath(new URL('../.cache/usage', import.meta.url)),
+});
+const chat = (url, body, opts) => llmLayer.chat(url, body, opts);
+// Caches are keyed by the model that writes, so a better model never gets the older model's answers.
+const named = llmLayer.useTinker ? { ...llm, model: llmLayer.model(''), models: tinkerModels } : llm;
+console.log(`model calls: ${llmLayer.status().provider} (${llmLayer.status().model})${llmLayer.useTinker ? `, key ${env.TINKER_API_KEY ? 'set' : 'missing'}` : ''}`);
+// Turkish via English helps the small local model; a strong model translates directly (PIVOT=en|off).
+const pivot = env.PIVOT ?? (llmLayer.useTinker ? 'off' : 'en');
+
 const cacheDir = process.env.TRANSLATE_CACHE_DIR ?? new URL('../.cache/translations', import.meta.url).pathname;
 const defineCacheDir = process.env.DEFINE_CACHE_DIR ?? new URL('../.cache/definitions', import.meta.url).pathname;
 
@@ -75,10 +98,12 @@ const handler = createHandler({
   publicOrigin: process.env.PUBLIC_ORIGIN ?? '',
   parsePerMinute: Number(process.env.PARSE_PER_MINUTE ?? 60),
   nlpStatus: info,
-  translate: llmOn ? createTranslateHandler({ ...llm, cacheDir, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12) }) : null,
-  define: llmOn ? createDefineHandler({ llm, cacheDir: defineCacheDir }) : null,
-  sentence: llmOn ? createSentenceHandler({ llm, cacheDir: defineCacheDir }) : null,
-  llmStatus: llmOn ? () => ollamaStatus(llm) : null,
+  translate: llmOn ? createTranslateHandler({ ...named, cacheDir, chat, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12),
+    ...(llmLayer.useTinker ? { jobs: 8, parallel: 4 } : {}) }) : null,
+  define: llmOn ? createDefineHandler({ llm: named, cacheDir: defineCacheDir, chat }) : null,
+  sentence: llmOn ? createSentenceHandler({ llm: named, cacheDir: defineCacheDir, chat }) : null,
+  llmStatus: llmOn ? async () => { const local = await ollamaStatus(llm); return { ok: llmLayer.useTinker || local.ok, ...llmLayer.status(), local }; } : null,
+  appConfig: { pivot },
   run,
   ytdlpInstalled: Boolean(version),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),

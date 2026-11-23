@@ -1,5 +1,6 @@
 // POST /api/sentence: one saved sentence in another language (the "My words" cards), via the local model.
 import { createHash } from 'node:crypto';
+import { llmContext, fellBack } from './llm/index.mjs';
 import { ApiError, LANG_RE } from './lib.mjs';
 import { diskCache, modelFor, ollamaTranslator, readBody } from './translate.mjs';
 
@@ -16,7 +17,8 @@ export function parseSentenceRequest(raw) {
 /** Results are cached on disk per sentence, languages and model. `chat` is injectable for tests. */
 export function createSentenceHandler({ llm, cacheDir = '', chat } = {}) {
   const cache = diskCache(cacheDir);
-  return async function sentenceRoute(req, res) {
+  return (req, res) => llmContext.run({}, () => sentenceRoute(req, res));
+  async function sentenceRoute(req, res) {
     const q = parseSentenceRequest(await readBody(req, 4_000));
     const key = 's1-' + createHash('sha256').update(JSON.stringify([modelFor(llm, q.to), q.from, q.to, q.text])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
@@ -27,7 +29,7 @@ export function createSentenceHandler({ llm, cacheDir = '', chat } = {}) {
       const [text] = await tr([q.text], [], ctl.signal);
       if (!text || text === q.text) throw new ApiError(502, 'llm-bad-response');
       out = { text };
-      await cache.set(key, out);
+      if (!fellBack()) await cache.set(key, out); // a fallback answer is shown, not kept
     }
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(out));

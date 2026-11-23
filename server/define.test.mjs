@@ -159,3 +159,11 @@ describe('Wiktionary retries', () => {
     expect(Date.now() - t0).toBeGreaterThanOrEqual(1000); // 400 ms + 800 ms pauses
   });
 });
+
+it('reads a meaning the model wrapped one level too deep', async () => {
+  const { define } = await import('./define.mjs');
+  const chat = async (url, body) => ({ status: 200, content: body.format?.properties?.t ? '{"t":{"1":{"1":"peron"}}}' : '{"best":1}' });
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ nl: [{ partOfSpeech: 'Noun', definitions: [{ definition: 'platform' }] }] }) });
+  const out = await define({ word: 'perron', lang: 'nl', to: 'tr', ctx: 'op het perron' }, { llm: { model: 'm', baseUrl: 'http://x' }, chat, fetchImpl });
+  expect(out.inContext).toBe('peron');
+});
