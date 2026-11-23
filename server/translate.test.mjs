@@ -264,7 +264,7 @@ describe('POST /api/translate (streamed)', () => {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${server.address().port}`;
     const post = async (body) => {
-      const res = await fetch(`${base}/api/translate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await fetch(`${base}/api/translate`, { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin', origin: base }, body: JSON.stringify(body) });
       const text = await res.text();
       return { status: res.status, type: res.headers.get('content-type'), events: text.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
     };

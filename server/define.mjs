@@ -2,6 +2,7 @@
 // by the local model. Falls back to the model alone for words Wiktionary does not have. Zero dependencies.
 import { createHash } from 'node:crypto';
 import { ApiError, LANG_RE } from './lib.mjs';
+import { logError } from './redact.mjs';
 import { chatStream, diskCache, languageName, modelFor, readBody } from './translate.mjs';
 
 const UA = 'Balonca/0.1 (subtitle language-learning app)';
@@ -62,10 +63,10 @@ async function wiktionary(word, fetchImpl, signal) {
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
         });
         if (r.ok || r.status === 404) res = r;
-        else console.error(`[${new Date().toISOString()}] wiktionary ${w} -> HTTP ${r.status}`);
+        else logError(`wiktionary lookup -> HTTP ${r.status}`); // never the word itself
       } catch (e) {
         if (signal?.aborted) return null;
-        console.error(`[${new Date().toISOString()}] wiktionary ${w} -> ${e?.name ?? 'error'}`);
+        logError(`wiktionary lookup -> ${e?.name ?? 'error'}`);
       }
     }
     if (!res) return null;

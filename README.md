@@ -92,7 +92,10 @@ The service uses **the `yt-dlp` of the operating system it runs on** (whatever i
 startup and `/api/health` reports whether it was found). `YTDLP_BIN=/path/to/yt-dlp` is only an override.
 Install it with your system's package manager (`sudo apt install yt-dlp`, `brew install yt-dlp`, `pacman -S yt-dlp`) or
 `pipx install yt-dlp`.
-Environment: `PORT`, `HOST`, `YTDLP_BIN` (optional), `TRUST_PROXY=1` (behind nginx), `RATE_PER_MINUTE`, `ALLOWED_ORIGINS`.
+Environment: `PORT`, `HOST`, `YTDLP_BIN` (optional), `TRUST_PROXY=1` (behind nginx), `RATE_PER_MINUTE`, `ALLOWED_ORIGINS`,
+`PUBLIC_ORIGIN` (the site's own origin, e.g. `https://balonca.example.com`), and for the reading mode `TTS_ENABLED`
+(`0` switches speech off; the app then uses the device voice), `TTS_NEW_PER_10MIN`, `TTS_CHARS_PER_DAY`,
+`TTS_CACHED_PER_MIN`, `PARSE_PER_MINUTE`. See `deploy/balonca.env.example`.
 
 Things to know:
 - YouTube answers **HTTP 429 for its machine-translated captions** when asked by scripts, so those often fail while the
@@ -207,6 +210,25 @@ features (and YouTube embedding behaviour) are more reliable on a secure origin.
 - The service only listens on 127.0.0.1 behind nginx. Translation requests are size-limited (1 MB, 5000 lines),
   validated, rate-limited per client and cancelled when the browser disconnects.
 - Imported backups and settings are re-validated field by field; CSV export neutralises spreadsheet formulas.
+- The API only answers the site itself: browsers mark its requests `Sec-Fetch-Site: same-origin` (older Safari: a
+  `Referer` from the site), and POSTs must carry the site's `Origin`. Other sites, embeds and links opened directly get
+  403. `/api/health` is open for monitoring.
+- Speech audio is `cache-control: private`, not indexed, and limited per client (cached audio, new sentences per
+  10 minutes, characters per day, two at a time). Text is cleaned first (no control characters, links or e-mail
+  addresses). Grammar requests have their own per-minute limit.
+- Logs never hold query strings, user text, keys, tokens or cookies: everything goes through `server/redact.mjs`.
+
+### Secret scanning
+The repository is public. A pre-commit hook and a GitHub Actions job scan for keys, tokens and real server addresses
+with [gitleaks](https://github.com/gitleaks/gitleaks) (`.gitleaks.toml`). After cloning:
+
+```sh
+# install gitleaks (any of: brew install gitleaks / a release binary on PATH), then
+git config core.hooksPath .githooks
+```
+
+Never commit `.env` files, databases, logs, caches or real server settings; examples use `203.0.113.x` and
+`balonca.example.com`. If a key ever leaks: revoke it first, then clean the history.
 
 ## Copyright
 Use this tool for personal language learning and respect creators' rights.

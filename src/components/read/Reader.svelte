@@ -156,7 +156,7 @@
 
     {#if showTrans}
       {#if !transLang}
-        <div class="notice"><span>{t('read.trans.choose')}</span><ShowLang compact /></div>
+        <div class="notice"><span>{t('read.trans.choose')}</span><ShowLang compact exclude={doc.lang} /></div>
       {:else if job && !job.error}
         <p class="notice muted" role="status"><span class="spin" aria-hidden="true"></span>
           {job.queued ? t('read.trans.queued', { n: job.queued }) : job.step === 'pivot' ? t('read.trans.pivot', { done: job.done, total: job.total })

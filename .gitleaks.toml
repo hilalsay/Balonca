@@ -1,0 +1,32 @@
+# Secret scanning (gitleaks). The default rules plus formats this project uses.
+title = "balonca"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tinker-api-key"
+description = "Tinker API key"
+regex = '''\btml-[A-Za-z0-9_-]{20,}'''
+keywords = ["tml-"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic-style API key"
+regex = '''\bsk-ant-[A-Za-z0-9_-]{20,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "tinker-checkpoint"
+description = "Tinker checkpoint path"
+regex = '''tinker://[^\s'"]+'''
+keywords = ["tinker://"]
+
+[[rules]]
+id = "server-ipv4"
+description = "A real IPv4 address (examples use 203.0.113.x, 198.51.100.x or 192.0.2.x)"
+regex = '''\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b'''
+[[rules.allowlists]]
+regexes = ['''^(?:127\.|10\.|192\.168\.|0\.0\.0\.0|255\.|203\.0\.113\.|198\.51\.100\.|192\.0\.2\.|172\.(?:1[6-9]|2\d|3[01])\.)''']
+[[rules.allowlists]]
+paths = ['''package-lock\.json$''', '''\.svg$''']

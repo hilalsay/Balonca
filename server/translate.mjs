@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { ApiError, LANG_RE } from './lib.mjs';
+import { logError } from './redact.mjs';
 
 export const LIMITS = { maxBody: 1_000_000, maxCues: 5000, maxText: 600 };
 
@@ -427,7 +428,7 @@ export function createTranslateHandler({
       send({ type: 'done' });
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(502, 'llm-failed', e?.message);
-      if (err.code !== 'cancelled') console.error(`[${new Date().toISOString()}] translate ${from}->${to} -> ${err.code}: ${err.detail ?? ''}`);
+      if (err.code !== 'cancelled') logError(`translate ${from}->${to} -> ${err.code}: ${err.detail ?? ''}`);
       send({ type: 'error', error: err.code });
     } finally {
       clearInterval(heartbeat);

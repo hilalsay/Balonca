@@ -56,7 +56,15 @@ const ttsCacheDir = process.env.TTS_CACHE_DIR ?? fileURLToPath(new URL('../.cach
 
 const handler = createHandler({
   parse: parseWorker ? createParseHandler({ worker: parseWorker, info }) : null,
-  tts: ttsWorker ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir }) : null,
+  // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).
+  tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, limits: {
+    ...(process.env.TTS_NEW_PER_10MIN ? { newPer10Min: Number(process.env.TTS_NEW_PER_10MIN) } : {}),
+    ...(process.env.TTS_CHARS_PER_DAY ? { charsPerDay: Number(process.env.TTS_CHARS_PER_DAY) } : {}),
+    ...(process.env.TTS_CACHED_PER_MIN ? { cachedPerMin: Number(process.env.TTS_CACHED_PER_MIN) } : {}),
+  } }) : null,
+  // The site's own address: POST requests must come from it (empty: the request's own Host is taken).
+  publicOrigin: process.env.PUBLIC_ORIGIN ?? '',
+  parsePerMinute: Number(process.env.PARSE_PER_MINUTE ?? 60),
   nlpStatus: info,
   translate: llmOn ? createTranslateHandler({ ...llm, cacheDir, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12) }) : null,
   define: llmOn ? createDefineHandler({ llm, cacheDir: defineCacheDir }) : null,

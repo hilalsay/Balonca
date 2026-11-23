@@ -10,6 +10,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { ApiError, LANG_RE } from './lib.mjs';
 import { readBody } from './translate.mjs';
+import { logError } from './redact.mjs';
 
 export const NLP_LIMITS = { sents: 80, chars: 600, total: 24_000, queue: 40 };
 
@@ -27,7 +28,8 @@ export function pyWorker({ python, script, args = [], env = {}, spawnImpl = spaw
     if (restarts.length >= maxRestarts) throw new ApiError(503, 'nlp-unavailable');
     restarts.push(t);
     const c = spawnImpl(python, [script, ...args], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...env } });
-    c.stderr?.on('data', (d) => { const s = String(d).trim(); if (s) console.error(`[nlp] ${s.slice(0, 500)}`); });
+    // Only the last line (the error), never more: a traceback can quote the text being processed.
+    c.stderr?.on('data', (d) => { const s = String(d).trim().split('\n').pop() ?? ''; if (s) logError(`[nlp] ${s.slice(0, 200)}`); });
     createInterface({ input: c.stdout }).on('line', (line) => {
       let msg;
       try { msg = JSON.parse(line); } catch { return; }
@@ -42,7 +44,7 @@ export function pyWorker({ python, script, args = [], env = {}, spawnImpl = spaw
       for (const [id, p] of pending) { clearTimeout(p.timer); p.reject(new ApiError(502, 'nlp-crashed')); pending.delete(id); }
     };
     c.on('exit', fail);
-    c.on('error', (e) => { console.error(`[nlp] ${e.message}`); fail(); });
+    c.on('error', (e) => { logError(`[nlp] ${e.code ?? e.name}`); fail(); });
     c.stdin.on('error', () => {});
     return c;
   };
@@ -108,13 +110,49 @@ export function createParseHandler({ worker, info, cacheSize = 3000 }) {
   };
 }
 
+/** Text that may be read aloud: no control characters, no web or e-mail addresses, at least one letter. */
+export function speakable(raw) {
+  const text = String(raw ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, ' ')
+    .replace(/[\w.%+-]+@[\w-]+(?:\.[\w-]+)+/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  return /\p{L}/u.test(text) ? text : '';
+}
+
 /** Validates GET /api/tts. */
 export function parseTtsQuery(url) {
   const lang = String(url.searchParams.get('lang') ?? '').toLowerCase();
-  const text = String(url.searchParams.get('text') ?? '').replace(/\s+/g, ' ').trim();
-  if (!LANG_RE.test(lang) || !text || text.length > NLP_LIMITS.chars) throw new ApiError(400, 'bad-request');
+  const raw = String(url.searchParams.get('text') ?? '');
+  if (!LANG_RE.test(lang) || raw.length > NLP_LIMITS.chars * 2) throw new ApiError(400, 'bad-request');
+  const text = speakable(raw);
+  if (!text || text.length > NLP_LIMITS.chars) throw new ApiError(400, 'bad-request');
   return { lang, text };
 }
+
+/** Counts `amount` per key in a sliding window; `has` checks without counting. */
+export function windowCounter(windowMs, max, now = Date.now) {
+  const hits = new Map(); // key -> [{at, n}]
+  const recent = (key) => {
+    const t = now(), list = (hits.get(key) ?? []).filter((x) => t - x.at < windowMs);
+    if (list.length) hits.set(key, list); else hits.delete(key);
+    return list;
+  };
+  const used = (key) => recent(key).reduce((s, x) => s + x.n, 0);
+  return {
+    used,
+    has: (key, amount = 1) => used(key) + amount <= max,
+    add(key, amount = 1) {
+      const list = recent(key); list.push({ at: now(), n: amount }); hits.set(key, list);
+      if (hits.size > 5000) for (const k of hits.keys()) recent(k);
+    },
+  };
+}
+
+/** Speech limits per client: cached audio is cheap, new speech costs CPU and disk. Settable through env. */
+export const TTS_LIMITS = {
+  cachedPerMin: 120, newPer10Min: 60, charsPerDay: 30_000, concurrent: 2,
+};
 
 /** Deletes the oldest files once the folder is over `maxBytes`. */
 export async function pruneDir(dir, maxBytes) {
@@ -132,12 +170,28 @@ export async function pruneDir(dir, maxBytes) {
   }
 }
 
-export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500_000_000 }) {
+export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500_000_000, limits = {}, now = Date.now }) {
+  const L = { ...TTS_LIMITS, ...limits };
+  const cachedLimit = windowCounter(60_000, L.cachedPerMin, now);
+  const newLimit = windowCounter(600_000, L.newPer10Min, now);
+  const charLimit = windowCounter(86_400_000, L.charsPerDay, now);
+  const running = new Map(); // client -> syntheses in progress
+  // A daily line in the log: how much new speech was made (counts only, never the text or the address).
+  let day = { start: now(), n: 0, chars: 0, clients: new Map() };
+  const tally = (ip, chars) => {
+    if (now() - day.start > 86_400_000) {
+      if (day.n) console.log(`[tts] last 24h: ${day.n} new sentences, ${day.chars} characters, ${day.clients.size} clients, most by one client ${Math.max(...day.clients.values())} characters`);
+      day = { start: now(), n: 0, chars: 0, clients: new Map() };
+    }
+    day.n++; day.chars += chars; day.clients.set(ip, (day.clients.get(ip) ?? 0) + chars);
+  };
   let writes = 0;
   const inflight = new Map(); // one synthesis per sentence, however many ask at once
   const ready = mkdir(cacheDir, { recursive: true });
   void ready.then(() => pruneDir(cacheDir, maxCacheBytes));
-  return async function ttsRoute(req, res, url) {
+  return async function ttsRoute(req, res, url, ip = '?') {
+    if (!cachedLimit.has(ip)) throw new ApiError(429, 'rate-limit');
+    cachedLimit.add(ip);
     const { lang, text } = parseTtsQuery(url);
     const voices = (await info()).tts;
     if (!voices.includes(lang)) throw new ApiError(422, 'unsupported-lang');
@@ -146,7 +200,15 @@ export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500
     let st = await stat(file).catch(() => null);
     if (!st) {
       if (!inflight.has(file)) {
-        inflight.set(file, worker.call({ op: 'tts', lang, text, out: file }).finally(() => inflight.delete(file)));
+        // New speech: counted per client (sentences per 10 minutes, characters per day, two at a time).
+        if (!newLimit.has(ip) || !charLimit.has(ip, text.length) || (running.get(ip) ?? 0) >= L.concurrent) throw new ApiError(429, 'rate-limit');
+        newLimit.add(ip); charLimit.add(ip, text.length); tally(ip, text.length);
+        running.set(ip, (running.get(ip) ?? 0) + 1);
+        inflight.set(file, worker.call({ op: 'tts', lang, text, out: file }).finally(() => {
+          inflight.delete(file);
+          const r = (running.get(ip) ?? 1) - 1;
+          if (r > 0) running.set(ip, r); else running.delete(ip);
+        }));
         if (++writes % 300 === 0) void pruneDir(cacheDir, maxCacheBytes);
       }
       await inflight.get(file);
@@ -166,7 +228,8 @@ export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500
     }
     res.writeHead(status, {
       'content-type': 'audio/wav', 'content-length': to - from + 1, 'accept-ranges': 'bytes',
-      'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff',
+      // Private: no proxy or CDN keeps it, and search engines do not list it.
+      'cache-control': 'private, max-age=86400', 'x-robots-tag': 'noindex', 'x-content-type-options': 'nosniff',
       ...(status === 206 ? { 'content-range': `bytes ${from}-${to}/${st.size}` } : {}),
     });
     if (req.method === 'HEAD') return res.end();
