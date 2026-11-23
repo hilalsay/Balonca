@@ -264,7 +264,7 @@ describe('POST /api/translate (streamed)', () => {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${server.address().port}`;
     const post = async (body) => {
-      const res = await fetch(`${base}/api/translate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await fetch(`${base}/api/translate`, { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin', origin: base }, body: JSON.stringify(body) });
       const text = await res.text();
       return { status: res.status, type: res.headers.get('content-type'), events: text.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
     };
@@ -320,5 +320,24 @@ describe('parseModels / modelFor', () => {
     expect(models).toEqual({ tr: 'aya-expanse:8b', en: 'big' });
     expect(modelFor({ model: 'gemma3', models }, 'tr')).toBe('aya-expanse:8b');
     expect(modelFor({ model: 'gemma3', models }, 'nl')).toBe('gemma3');
+  });
+});
+
+describe('parallel batches', () => {
+  it('runs batches at once but delivers them in order', async () => {
+    const { createTranslateHandler } = await import('./translate.mjs');
+    const delays = [60, 5, 30]; let call = 0;
+    const h = createTranslateHandler({
+      parallel: 3, jobs: 2,
+      makeTranslator: () => async (texts) => { const d = delays[call++ % 3]; await new Promise((r) => setTimeout(r, d)); return texts.map((t) => `T:${t}`); },
+    });
+    const cues = Array.from({ length: 24 }, (_, i) => ({ start: i * 3, end: i * 3 + 2, text: `Zin nummer ${i}.` }));
+    const { PassThrough } = await import('node:stream');
+    const req = new PassThrough(); req.end(JSON.stringify({ from: 'nl', to: 'en', cues }));
+    let out = ''; const res = new PassThrough(); res.writeHead = () => {}; res.on('data', (d) => (out += d));
+    await h(req, res, '203.0.113.1');
+    const events = out.trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.type === 'cues');
+    expect(events.map((e) => e.done)).toEqual([8, 16, 24]);
+    expect(events.flatMap((e) => e.cues.map((c) => c.text))).toEqual(cues.map((c) => `T:${c.text}`));
   });
 });

@@ -57,6 +57,8 @@ class Speech {
   voices = $state<SpeechSynthesisVoice[]>([]);
   serverLangs = $state<string[]>([]);
 
+  /** Languages whose server voice failed in this visit (refused, limit reached, switched off): the device reads them. */
+  private serverDown = new Set<string>();
   private lines: Line[] = [];
   private lang = '';
   private run = 0;
@@ -84,7 +86,7 @@ class Speech {
   }
   /** Which voice will read `lang`, given the setting and what is available; null when none can. */
   engineFor(lang: string): Engine | null {
-    const server = this.serverLangs.includes(lang), device = !!this.deviceVoice(lang);
+    const server = this.serverLangs.includes(lang) && !this.serverDown.has(lang), device = !!this.deviceVoice(lang);
     const want = app.settings.readEngine;
     if (want === 'device') return device ? 'device' : server ? 'server' : null;
     return server ? 'server' : device ? 'device' : null;
@@ -194,7 +196,18 @@ class Speech {
         tick();
       };
       a.onended = () => done(run === this.run);
-      a.onerror = () => { if (run === this.run) this.problem = 'failed'; done(false); };
+      a.onerror = () => {
+        // Refused or switched off (403/429/404): quietly carry on with the device's voice if it has one.
+        if (run === this.run && this.deviceVoice(lang)) {
+          this.serverDown.add(lang);
+          a.onended = a.onerror = a.onplaying = null;
+          this.loading = false;
+          void this.speakDevice(lang, text, run, o).then(resolve);
+          return;
+        }
+        if (run === this.run) this.problem = 'failed';
+        done(false);
+      };
       a.play().catch((e: DOMException) => {
         if (run !== this.run) return done(false);
         this.problem = e?.name === 'NotAllowedError' ? 'blocked' : 'failed';

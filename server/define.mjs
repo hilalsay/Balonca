@@ -1,7 +1,9 @@
 // Word meanings for the word bags: real dictionary senses from Wiktionary, translated and matched to the sentence
 // by the local model. Falls back to the model alone for words Wiktionary does not have. Zero dependencies.
 import { createHash } from 'node:crypto';
+import { llmContext, fellBack } from './llm/index.mjs';
 import { ApiError, LANG_RE } from './lib.mjs';
+import { logError } from './redact.mjs';
 import { chatStream, diskCache, languageName, modelFor, readBody } from './translate.mjs';
 
 const UA = 'Balonca/0.1 (subtitle language-learning app)';
@@ -62,10 +64,10 @@ async function wiktionary(word, fetchImpl, signal) {
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
         });
         if (r.ok || r.status === 404) res = r;
-        else console.error(`[${new Date().toISOString()}] wiktionary ${w} -> HTTP ${r.status}`);
+        else logError(`wiktionary lookup -> HTTP ${r.status}`); // never the word itself
       } catch (e) {
         if (signal?.aborted) return null;
-        console.error(`[${new Date().toISOString()}] wiktionary ${w} -> ${e?.name ?? 'error'}`);
+        logError(`wiktionary lookup -> ${e?.name ?? 'error'}`);
       }
     }
     if (!res) return null;
@@ -130,6 +132,8 @@ const aloneSchema = {
     senses: { type: 'array', items: { type: 'object', required: ['pos', 'meaning'], properties: { pos: str, meaning: str } } } },
 };
 
+/** Some models wrap a string answer one level deeper ({"1": {"1": "…"}}): take the string inside. */
+const flat = (v) => (v && typeof v === 'object' ? Object.values(v).find((x) => typeof x === 'string') ?? '' : v);
 const tidy = (s, max = 120) => (typeof s === 'string' ? s.replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
 /**
@@ -184,7 +188,7 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
     t = g.t ?? {};
   }
   const out = senses.map((s, i) => ({
-    head: s.head, pos: s.pos, meaning: (to !== 'en' ? tidy(t[String(i + 1)]) : '') || s.gloss,
+    head: s.head, pos: s.pos, meaning: (to !== 'en' ? tidy(flat(t[String(i + 1)])) : '') || s.gloss,
     ...(to !== 'en' ? { en: s.gloss } : {}), ...(s.example ? { example: s.example } : {}), ...(i === best ? { best: true } : {}),
   }));
   out.unshift(...out.splice(best, 1)); // the meaning in this sentence first
@@ -204,7 +208,8 @@ export function parseDefineRequest(raw) {
 /** POST /api/define handler. Results are cached on disk per word, language, sentence and model. */
 export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl } = {}) {
   const cache = diskCache(cacheDir);
-  return async function defineRoute(req, res) {
+  return (req, res) => llmContext.run({}, () => defineRoute(req, res));
+  async function defineRoute(req, res) {
     const q = parseDefineRequest(await readBody(req, 20_000));
     const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
@@ -212,7 +217,7 @@ export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl } = {}
       const ctl = new AbortController();
       res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
       out = await define(q, { llm, signal: ctl.signal, ...(chat ? { chat } : {}), ...(fetchImpl ? { fetchImpl } : {}) });
-      if (!out.temporary) await cache.set(key, out); // a guess made while the dictionary was unreachable is not kept
+      if (!out.temporary && !fellBack()) await cache.set(key, out); // a guess made while the dictionary was unreachable is not kept
     }
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(out));

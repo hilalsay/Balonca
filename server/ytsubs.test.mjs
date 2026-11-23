@@ -77,7 +77,8 @@ async function call(handler, path, headers = {}) {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const { port } = server.address();
   try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
+    // A browser on the site itself marks its requests same-origin (the API refuses anything else).
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { 'sec-fetch-site': 'same-origin', ...headers } });
     return { status: res.status, text: await res.text(), headers: res.headers };
   } finally { server.close(); }
 }
@@ -157,7 +158,7 @@ describe('system yt-dlp', () => {
   it('health tells whether yt-dlp is available', async () => {
     const yes = await call(createHandler({ ytdlpInstalled: true }), '/api/health');
     const no = await call(createHandler({ ytdlpInstalled: false }), '/api/health');
-    expect(JSON.parse(yes.text)).toEqual({ ok: true, ytdlp: true });
-    expect(JSON.parse(no.text)).toEqual({ ok: true, ytdlp: false });
+    expect(JSON.parse(yes.text)).toMatchObject({ ok: true, ytdlp: true });
+    expect(JSON.parse(no.text)).toMatchObject({ ok: true, ytdlp: false });
   });
 });

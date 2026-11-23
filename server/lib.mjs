@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { logError } from './redact.mjs';
+import { createYouTube } from './youtube.mjs';
 
 export const ID_RE = /^[A-Za-z0-9_-]{11}$/;
 // No dots or regex metacharacters: yt-dlp treats --sub-langs values as regular expressions.
@@ -110,25 +112,40 @@ export function semaphore(limit, queueMax) {
   };
 }
 
+/**
+ * Only the site itself may use the API (not other sites, not a shared link opened in the address bar):
+ * browsers mark their own requests `Sec-Fetch-Site: same-origin`, and a POST must come from the site's origin.
+ * Origins listed in ALLOWED_ORIGINS (development front ends) are let through too. A script can fake both
+ * headers, so this is a first wall, not authentication.
+ */
+export function checkSource(req, { publicOrigin = '', allowedOrigins = [] } = {}) {
+  const origin = String(req.headers.origin ?? '');
+  const listed = !!origin && allowedOrigins.includes(origin);
+  const site = req.headers['sec-fetch-site'];
+  // Safari before iOS 16.4 sends no Sec-Fetch-Site: then the Referer must be a page of this site.
+  // (A link opened directly has no Referer; another site's page has its own.)
+  const ownPage = (u) => { try { const x = new URL(u); return publicOrigin ? x.origin === publicOrigin : x.host === req.headers.host; } catch { return false; } };
+  const same = site === 'same-origin' || (site === undefined && ownPage(String(req.headers.referer ?? '')));
+  if (!same && !listed) throw new ApiError(403, 'forbidden');
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
+    let own = listed;
+    if (!own && origin) {
+      try { own = publicOrigin ? origin === publicOrigin : new URL(origin).host === req.headers.host; } catch { own = false; }
+    }
+    if (!own) throw new ApiError(403, 'forbidden');
+  }
+}
+
 export function createHandler({
   run = runYtDlp, ytdlpInstalled = true, allowedOrigins = [], trustProxy = false, ratePerMinute = 30,
   ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
-  parse = null, tts = null, nlpStatus = null,
+  parse = null, tts = null, nlpStatus = null, publicOrigin = '', parsePerMinute = 60, youtube = null, appConfig = { pivot: 'en' },
 } = {}) {
+  // All YouTube calls: cache, shared budget, circuit breaker (youtube.mjs). Without a cache dir: memory only.
+  const yt = youtube ?? createYouTube({ run, limits: { gapMs: [0, 0] } });
   const limit = rateLimiter(ratePerMinute, now);
-  // Reading a text asks for one sentence at a time (speech, grammar): cheap requests with their own, higher limit.
-  const readLimit = rateLimiter(ratePerMinute * 8, now);
-  const slot = semaphore(2, 4);
-  const cache = new Map(); // key -> { at, value }
-  const cached = async (key, make) => {
-    const hit = cache.get(key);
-    if (hit && now() - hit.at < ttlMs) return hit.value;
-    const value = await slot(make);
-    cache.set(key, { at: now(), value });
-    if (cache.size > 60) cache.delete(cache.keys().next().value);
-    return value;
-  };
-
+  // Grammar is asked one sentence at a time while reading: its own limit (speech has its own, in nlp.mjs).
+  const parseLimit = rateLimiter(parsePerMinute, now);
   return async function handle(req, res) {
     const origin = req.headers.origin;
     const send = (status, body, type = 'application/json; charset=utf-8') => {
@@ -142,6 +159,7 @@ export function createHandler({
     try {
       if (req.method === 'OPTIONS') return send(204, '');
       const url = new URL(req.url ?? '/', 'http://x');
+      if (url.pathname !== '/api/health') checkSource(req, { publicOrigin, allowedOrigins });
       const ip = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
       if (url.pathname === '/api/translate') {
         if (!translate) throw new ApiError(404, 'not-found-route');
@@ -164,37 +182,38 @@ export function createHandler({
       if (url.pathname === '/api/parse') {
         if (!parse) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
-        if (!readLimit(ip)) throw new ApiError(429, 'rate-limit');
+        if (!parseLimit(ip)) throw new ApiError(429, 'rate-limit');
         return await parse(req, res, ip);
       }
       if (url.pathname === '/api/tts') {
         if (!tts) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'method');
-        if (!readLimit(ip)) throw new ApiError(429, 'rate-limit');
-        return await tts(req, res, url);
+        return await tts(req, res, url, ip); // limits of its own: cached audio vs. new speech
       }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
+      if (url.pathname === '/api/config') return send(200, appConfig);
       if (url.pathname === '/api/nlp') return send(200, nlpStatus ? await nlpStatus() : { parse: [], tts: [] });
       if (url.pathname === '/api/health') {
-        return send(200, { ok: true, ytdlp: ytdlpInstalled, ...(llmStatus ? { llm: await llmStatus() } : {}), ...(nlpStatus ? { nlp: await nlpStatus() } : {}) });
+        return send(200, { ok: true, ytdlp: ytdlpInstalled, youtube: yt.status(), ...(llmStatus ? { llm: await llmStatus() } : {}), ...(nlpStatus ? { nlp: await nlpStatus() } : {}) });
       }
       if (!limit(ip)) throw new ApiError(429, 'rate-limit');
 
       const id = url.searchParams.get('v') ?? '';
       if (!ID_RE.test(id)) throw new ApiError(400, 'bad-request');
 
-      if (url.pathname === '/api/subs') return send(200, await cached(`l:${id}`, () => listTracks(id, run)));
+      if (url.pathname === '/api/subs') return send(200, await yt.list(id, ip));
       if (url.pathname === '/api/sub') {
         const lang = url.searchParams.get('lang') ?? '';
         const kind = url.searchParams.get('kind') === 'manual' ? 'manual' : 'auto';
         if (!LANG_RE.test(lang)) throw new ApiError(400, 'bad-request');
-        const r = await cached(`s:${id}:${lang}:${kind}`, () => fetchTrack(id, lang, kind, run));
+        const r = await yt.sub(id, lang, kind, ip);
         return send(200, r.text, r.name.endsWith('.json3') ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8');
       }
       throw new ApiError(404, 'not-found-route');
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(500, 'failed');
-      if (err.status >= 500) console.error(`[${new Date().toISOString()}] ${req.url} -> ${err.code}: ${err.detail ?? e?.message ?? ''}`);
+      // Only the path: query strings can hold what the user wrote (speech text).
+      if (err.status >= 500) logError(`${new URL(req.url ?? '/', 'http://x').pathname} -> ${err.code}: ${err.detail ?? e?.message ?? ''}`);
       if (res.headersSent) res.end(); else send(err.status, { error: err.code });
     }
   };

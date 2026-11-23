@@ -90,3 +90,11 @@ export async function serverTranslate(opts: {
   if (!finished) throw new TranslateError(opts.signal.aborted ? 'cancelled' : 'network', 'stream ended early');
   return all;
 }
+
+/** Settings the server announces (GET /api/config). `pivot: 'en'`: Turkish is made from the English translation. */
+export const serverConfig = $state({ pivot: 'en' as 'en' | 'off' });
+if (SERVER_TRANSLATE_ENABLED && typeof fetch !== 'undefined' && typeof window !== 'undefined') {
+  void fetch(`${BASE}/config`).then((r) => (r.ok ? r.json() : null)).then((c: { pivot?: string } | null) => {
+    if (c?.pivot === 'off' || c?.pivot === 'en') serverConfig.pivot = c.pivot;
+  }).catch(() => {});
+}

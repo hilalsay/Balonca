@@ -5,13 +5,13 @@
  */
 import { app } from '../state.svelte';
 import type { Cue, TextDoc } from '../types';
-import { serverTranslate } from '../translate/server';
+import { serverTranslate, serverConfig } from '../translate/server.svelte';
 import { TranslateError } from '../translate/runner';
 import { translateSentence, SentenceError } from '../words/sentence';
 
 export const PIVOT = 'en';
 /** Languages translated via English. */
-export const viaEnglish = (from: string, to: string) => to === 'tr' && from !== PIVOT;
+export const viaEnglish = (from: string, to: string) => serverConfig.pivot === 'en' && to === 'tr' && from !== PIVOT;
 
 /** Every sentence gets its own time slot, far apart, so the server keeps them as separate units. */
 const SLOT = 10;

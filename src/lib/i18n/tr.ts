@@ -575,6 +575,10 @@ export const tr = {
   'help.a10': 'Cümle, Balonca’nın sunucusunda bir dil çözümleyicisiyle (spaCy) parçalarına ayrılır: özne, fiil, nesne… Açıklamalar elle yazılmış kurallardan gelir; yapay zekâ uydurmaz. Şimdilik Felemenkçe, İngilizce, Almanca, Fransızca ve İspanyolca için var. Nadiren bir parçayı yanlış adlandırabilir.',
   'help.q11': 'Ses gelmiyor ya da çok robotik',
   'help.a11': 'Okuma ayarlarında (⚙) iki ses var: Balonca sesi (sunucudan, her cihazda aynı) ve cihazın sesi (internetsiz de çalışır). Biri çalışmazsa diğerini dene. Telefon sessizdeyse ses duyulmayabilir.',
+  'ytsubs.err.yt-busy': 'Altyazı sırası şu an çok uzun. Birkaç dakika sonra tekrar dene ya da altyazı dosyasını kendin yükle.',
+  'ytsubs.err.yt-blocked': 'YouTube şu an altyazı vermiyor. Daha önce açılmış videolar çalışır; bu video için altyazı dosyasını kendin yükleyebilirsin.',
+  'ytsubs.err.auto-translated': 'Bu altyazı YouTube’un otomatik çevirisi; onun yerine Balonca kendisi çevirir.',
+  'ytsubs.err.daily-videos': 'Bugün için yeni video sınırına ulaştın. Daha önce açtığın videolar çalışmaya devam eder; yarın yeniden dene.',
 } as const;
 
 export type MessageKey = keyof typeof tr;

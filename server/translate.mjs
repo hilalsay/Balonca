@@ -4,7 +4,9 @@ import https from 'node:https';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
+import { llmContext, fellBack } from './llm/index.mjs';
 import { ApiError, LANG_RE } from './lib.mjs';
+import { logError } from './redact.mjs';
 
 export const LIMITS = { maxBody: 1_000_000, maxCues: 5000, maxText: 600 };
 
@@ -303,18 +305,18 @@ export function diskCache(dir) {
 }
 
 /** Single-lane queue that knows how many jobs are ahead of you. */
-export function lane(queueMax = 6) {
-  let tail = Promise.resolve(), waiting = 0;
+export function lane(queueMax = 6, concurrency = 1) {
+  let active = 0;
+  const waiters = [];
   return {
-    get waiting() { return waiting; },
+    get waiting() { return active + waiters.length; },
     async run(fn, onQueued) {
-      if (waiting >= queueMax) throw new ApiError(503, 'busy');
-      const ahead = waiting++;
-      if (ahead > 0) onQueued?.(ahead);
-      const prev = tail;
-      let release;
-      tail = new Promise((r) => (release = r));
-      try { await prev; return await fn(); } finally { waiting--; release(); }
+      if (active >= concurrency) {
+        if (active + waiters.length >= queueMax + concurrency - 1) throw new ApiError(503, 'busy');
+        onQueued?.(active + waiters.length - concurrency + 1);
+        await new Promise((r) => waiters.push(r)); // a finished job hands its place over
+      } else active++;
+      try { return await fn(); } finally { const next = waiters.shift(); if (next) next(); else active--; }
     },
   };
 }
@@ -376,9 +378,11 @@ export function healed(out, units) {
 export function createTranslateHandler({
   baseUrl = 'http://127.0.0.1:11434', model: defaultModel = 'gemma3:latest', models = {}, hostHeader = '', cacheDir = '',
   jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now,
+  chat, // model call (llm/index.mjs); default: Ollama directly
+  jobs = 1, parallel = 1, // jobs at once / batches of one job at once (Tinker: several; local model: 1)
 } = {}) {
   const cache = diskCache(cacheDir);
-  const queue = lane(6);
+  const queue = lane(6 + jobs, jobs);
   const hits = new Map();
   const allow = (ip) => {
     const t = now(), recent = (hits.get(ip) ?? []).filter((x) => t - x < 3_600_000);
@@ -387,7 +391,8 @@ export function createTranslateHandler({
     return true;
   };
 
-  return async function translate(req, res, ip) {
+  return (req, res, ip) => llmContext.run({}, () => translate(req, res, ip));
+  async function translate(req, res, ip) {
     const { from, to, cues } = parseRequest(await readBody(req));
     const model = modelFor({ model: defaultModel, models }, to);
     const units = toUnits(cues);
@@ -413,21 +418,37 @@ export function createTranslateHandler({
     const heartbeat = setInterval(() => send({ type: 'ping' }), 15_000); // keeps proxies from timing out while queued
     try {
       await queue.run(async () => {
-        const tr = makeTranslator({ baseUrl, model, hostHeader, from, to });
-        for (const batch of batches(units)) {
-          if (batch[0] < saved.out.length) continue; // already done in an earlier (cancelled) run
-          if (ctl.signal.aborted) throw new ApiError(499, 'cancelled');
-          const first = batch[0], context = units.slice(Math.max(0, first - 3), first).map((u) => u.text);
-          const texts = await tr(batch.map((i) => units[i].text), context, ctl.signal);
-          saved.out.push(...texts);
-          await cache.set(key, saved);
-          send({ type: 'cues', done: saved.out.length, cues: timed(first, saved.out.length) });
-        }
+        const tr = makeTranslator({ baseUrl, model, hostHeader, from, to, ...(chat ? { chat } : {}) });
+        // Batches are independent (their context is the source, not earlier translations), so several may run at
+        // once; they still reach the browser in order: a batch that finishes early waits for the ones before it.
+        const todo = batches(units).filter((b) => b[0] >= saved.out.length);
+        const done = new Map();
+        let next = 0, emit = 0;
+        let chain = Promise.resolve();
+        const flush = () => (chain = chain.then(async () => { // one flush at a time keeps the order
+          while (emit < todo.length && done.has(emit)) {
+            const b = todo[emit], first = b[0];
+            saved.out.push(...done.get(emit)); done.delete(emit); emit++;
+            if (!fellBack()) await cache.set(key, saved); // after a fallback nothing more is kept (next time: the better model)
+            send({ type: 'cues', done: saved.out.length, cues: timed(first, saved.out.length) });
+          }
+        }));
+        const worker = async () => {
+          while (next < todo.length) {
+            if (ctl.signal.aborted) throw new ApiError(499, 'cancelled');
+            const k = next++, b = todo[k], first = b[0];
+            const context = units.slice(Math.max(0, first - 3), first).map((u) => u.text);
+            done.set(k, await tr(b.map((i) => units[i].text), context, ctl.signal));
+            await flush();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(parallel, todo.length)) }, worker));
+        await flush();
       }, (ahead) => send({ type: 'queued', ahead }));
       send({ type: 'done' });
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(502, 'llm-failed', e?.message);
-      if (err.code !== 'cancelled') console.error(`[${new Date().toISOString()}] translate ${from}->${to} -> ${err.code}: ${err.detail ?? ''}`);
+      if (err.code !== 'cancelled') logError(`translate ${from}->${to} -> ${err.code}: ${err.detail ?? ''}`);
       send({ type: 'error', error: err.code });
     } finally {
       clearInterval(heartbeat);

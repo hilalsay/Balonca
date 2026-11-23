@@ -134,7 +134,9 @@ describe('POST /api/define', () => {
       run: async () => ({ stdout: '' }), define: createDefineHandler({ llm: { baseUrl: 'http://h', model: 'm' }, cacheDir: dir, chat, fetchImpl: fakeFetch }),
     }));
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
-    const post = (body) => fetch(`http://127.0.0.1:${server.address().port}/api/define`, { method: 'POST', body: JSON.stringify(body) });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    // As the site's own page sends it (the API refuses other origins).
+    const post = (body) => fetch(`${base}/api/define`, { method: 'POST', headers: { 'sec-fetch-site': 'same-origin', origin: base }, body: JSON.stringify(body) });
     const a = await post({ word: 'graaf', lang: 'nl', to: 'en', ctx: 'Ik graaf.' });
     expect(a.status).toBe(200);
     expect((await a.json()).senses[0].meaning).toBe('earl, count');
@@ -156,4 +158,12 @@ describe('Wiktionary retries', () => {
     expect(n).toBe(3);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(1000); // 400 ms + 800 ms pauses
   });
+});
+
+it('reads a meaning the model wrapped one level too deep', async () => {
+  const { define } = await import('./define.mjs');
+  const chat = async (url, body) => ({ status: 200, content: body.format?.properties?.t ? '{"t":{"1":{"1":"peron"}}}' : '{"best":1}' });
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ nl: [{ partOfSpeech: 'Noun', definitions: [{ definition: 'platform' }] }] }) });
+  const out = await define({ word: 'perron', lang: 'nl', to: 'tr', ctx: 'op het perron' }, { llm: { model: 'm', baseUrl: 'http://x' }, chat, fetchImpl });
+  expect(out.inContext).toBe('peron');
 });

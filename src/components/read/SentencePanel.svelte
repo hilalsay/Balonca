@@ -86,7 +86,7 @@
     <section aria-labelledby="sp-tr">
       <h4 id="sp-tr">{t('read.translation')}{#if to} <span class="muted">· {langName(to, i18n.locale)}</span>{/if}</h4>
       {#if !to}
-        <ShowLang compact />
+        <ShowLang compact exclude={doc.lang} />
       {:else if tr}
         <p class="tr" lang={to}>{tr}</p>
         {#if en}<p class="en muted"><span>{t('read.viaEnglish')}</span> <span lang="en">{en}</span></p>{/if}

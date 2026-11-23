@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readEvents, serverTranslate } from './server';
+import { readEvents, serverTranslate } from './server.svelte';
 import { TranslateError } from './runner';
 import { pickManual, pickSource, baseLang } from '../ytsubs/pick';
 import { sanitizeSettings } from '../settings';

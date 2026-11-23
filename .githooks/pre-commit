@@ -1,0 +1,11 @@
+#!/bin/sh
+# Secret scan of what is about to be committed. Never skip it (no --no-verify): the repository is public.
+GL=$(command -v gitleaks || echo "$HOME/.local/bin/gitleaks")
+if [ ! -x "$GL" ]; then
+  echo "pre-commit: gitleaks is not installed. Install it (see README, 'Secret scanning') before committing." >&2
+  exit 1
+fi
+"$GL" git --pre-commit --staged --redact --no-banner -c .gitleaks.toml || {
+  echo "pre-commit: possible secret found. Remove it; if it was a real key, revoke it now." >&2
+  exit 1
+}
