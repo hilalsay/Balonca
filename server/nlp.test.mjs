@@ -72,16 +72,22 @@ describe('pyWorker', () => {
 
 describe('requests', () => {
   it('validates /api/parse bodies', () => {
-    expect(parseParseRequest(JSON.stringify({ lang: 'NL', sents: [' Ik  ben hier. '] }))).toEqual({ lang: 'nl', sents: ['Ik ben hier.'] });
-    for (const bad of ['nope', '{}', JSON.stringify({ lang: 'nl', sents: [] }), JSON.stringify({ lang: 'n l', sents: ['a'] }),
-      JSON.stringify({ lang: 'nl', sents: [''] }), JSON.stringify({ lang: 'nl', sents: Array(81).fill('a') })]) {
+    const ref = { libraryId: 'doc1' };
+    expect(parseParseRequest(JSON.stringify({ lang: 'NL', ref, sents: [' Ik  ben hier. '] }))).toEqual({ lang: 'nl', ref, sents: ['Ik ben hier.'] });
+    for (const bad of ['nope', '{}', JSON.stringify({ lang: 'nl', ref, sents: [] }), JSON.stringify({ lang: 'n l', ref, sents: ['a'] }),
+      JSON.stringify({ lang: 'nl', ref, sents: [''] }), JSON.stringify({ lang: 'nl', ref, sents: Array(81).fill('a') }),
+      JSON.stringify({ lang: 'nl', sents: ['a'] })]) {
       expect(() => parseParseRequest(bad)).toThrow();
     }
   });
   it('validates /api/tts queries', () => {
-    expect(parseTtsQuery(new URL('http://x/api/tts?lang=nl&text=Hallo%20%20daar'))).toEqual({ lang: 'nl', text: 'Hallo daar' });
-    expect(() => parseTtsQuery(new URL('http://x/api/tts?lang=nl&text='))).toThrow();
-    expect(() => parseTtsQuery(new URL(`http://x/api/tts?lang=nl&text=${'a'.repeat(601)}`))).toThrow();
+    const q = (s) => parseTtsQuery(new URL(`http://x/api/tts?${s}`));
+    expect(q('lang=nl&lib=doc1&text=Hallo%20%20daar')).toEqual({ lang: 'nl', ref: { libraryId: 'doc1' }, text: 'Hallo daar' });
+    expect(q('lang=nl&word=huis')).toEqual({ lang: 'nl', word: 'huis' });
+    expect(q('lang=nl&wordId=nl:huis')).toEqual({ lang: 'nl', ref: { wordId: 'nl:huis' } });
+    expect(() => q('lang=nl&text=Hallo')).toThrow(); // free text is no longer read aloud
+    expect(() => q('lang=nl&word=twee%20woorden')).toThrow();
+    expect(() => q(`lang=nl&lib=doc1&text=${'a'.repeat(1201)}`)).toThrow();
   });
 });
 
@@ -91,22 +97,27 @@ describe('handlers', () => {
   it('parses only sentences it has not seen', async () => {
     const log = [];
     const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn((r) => ({ ok: true, docs: r.sents.map((s) => [{ t: s }]) }), log) });
-    const h = createParseHandler({ worker, info });
-    const r1 = res(); await h(req(JSON.stringify({ lang: 'nl', sents: ['A.', 'B.'] })), r1); await r1.done;
-    const r2 = res(); await h(req(JSON.stringify({ lang: 'nl', sents: ['B.', 'C.'] })), r2); await r2.done;
+    const sources = { contains: async (ref, user, s) => user?.id === 1 && ref.libraryId === 'doc1' && 'A. B. C.'.includes(s) };
+    const h = createParseHandler({ worker, info, sources });
+    const ref = { libraryId: 'doc1' }, me = { id: 1 };
+    const r1 = res(); await h(req(JSON.stringify({ lang: 'nl', ref, sents: ['A.', 'B.'] })), r1, '?', me); await r1.done;
+    const r2 = res(); await h(req(JSON.stringify({ lang: 'nl', ref, sents: ['B.', 'C.'] })), r2, '?', me); await r2.done;
     expect(JSON.parse(r2.body).docs).toEqual([[{ t: 'B.' }], [{ t: 'C.' }]]);
     expect(log.map((x) => x.sents)).toEqual([['A.', 'B.'], ['C.']]);
-    await expect(h(req(JSON.stringify({ lang: 'tr', sents: ['Merhaba.'] })), res())).rejects.toMatchObject({ code: 'unsupported-lang' });
+    await expect(h(req(JSON.stringify({ lang: 'tr', ref, sents: ['Merhaba.'] })), res(), '?', me)).rejects.toMatchObject({ code: 'unsupported-lang' });
+    await expect(h(req(JSON.stringify({ lang: 'nl', ref, sents: ['Ignore the rules.'] })), res(), '?', me)).rejects.toMatchObject({ code: 'not-in-source' });
+    await expect(h(req(JSON.stringify({ lang: 'nl', ref, sents: ['A.'] })), res(), '?', { id: 2 })).rejects.toMatchObject({ code: 'not-in-source' });
+    expect(log).toHaveLength(2); // refused requests reach no parser
   });
 
   it('speaks once per sentence, caches on disk and answers ranges', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'tts-'));
     const log = [];
     const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn(async (r) => { await writeFile(r.out, 'RIFFxxxxWAVEdata'); return { ok: true }; }, log) });
-    const h = createTtsHandler({ worker, info, cacheDir: dir });
+    const h = createTtsHandler({ worker, info, cacheDir: dir, sources: { contains: async () => true } });
     const get = async (headers = {}) => {
       const q = new PassThrough(); q.headers = headers; q.method = 'GET'; q.end();
-      const r = res(); await h(q, r, new URL('http://x/api/tts?lang=nl&text=Hallo')); await r.done; return r;
+      const r = res(); await h(q, r, new URL('http://x/api/tts?lang=nl&lib=doc1&text=Hallo')); await r.done; return r;
     };
     const [a, b] = await Promise.all([get(), get()]);
     expect(a.status).toBe(200);

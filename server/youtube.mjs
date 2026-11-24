@@ -167,6 +167,16 @@ export function createYouTube({ run, cacheDir = '', limits = {}, now = Date.now,
     return null;
   }
 
+  /** Every subtitle of `vid` already in the cache (no YouTube call): [{ name, text }]. */
+  async function cachedSubs(vid) {
+    if (!cacheDir || !ID_RE.test(vid)) return [];
+    let names = [];
+    try { names = (await readdir(dirOf(vid))).filter((f) => f.startsWith('sub.')); } catch { return []; }
+    const out = [];
+    for (const f of names) { const hit = await load(vid, f); if (hit) out.push({ name: f, text: hit.text }); }
+    return out;
+  }
+
   function status() {
     const t = now();
     return {
@@ -177,5 +187,5 @@ export function createYouTube({ run, cacheDir = '', limits = {}, now = Date.now,
       lastRefusal: stats.lastBlock ? new Date(stats.lastBlock).toISOString() : null,
     };
   }
-  return { list, sub, status };
+  return { list, sub, cachedSubs, status };
 }

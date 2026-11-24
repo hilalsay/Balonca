@@ -181,30 +181,30 @@ export function createHandler({
         if (!translate) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
-        return await translate(req, res, ip); // streams its own response
+        return await translate(req, res, ip, user); // streams its own response
       }
       if (url.pathname === '/api/define') {
         if (!define) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
-        return await define(req, res, ip);
+        return await define(req, res, ip, user);
       }
       if (url.pathname === '/api/sentence') {
         if (!sentence) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
-        return await sentence(req, res, ip);
+        return await sentence(req, res, ip, user);
       }
       if (url.pathname === '/api/parse') {
         if (!parse) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
         if (!parseLimit(ip)) throw new ApiError(429, 'rate-limit');
-        return await parse(req, res, ip);
+        return await parse(req, res, ip, user);
       }
       if (url.pathname === '/api/tts') {
         if (!tts) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'method');
-        return await tts(req, res, url, ip); // limits of its own: cached audio vs. new speech
+        return await tts(req, res, url, ip, user); // limits of its own: cached audio vs. new speech
       }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
       if (url.pathname === '/api/config') return send(200, appConfig);

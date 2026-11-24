@@ -17,6 +17,7 @@ import { createYouTube } from './youtube.mjs';
 import { openDb } from './db.mjs';
 import { createAuth } from './auth.mjs';
 import { createSync } from './sync.mjs';
+import { createSources } from './sources.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -98,13 +99,19 @@ const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.PUBLIC_OR
 const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0', google }) : null;
 console.log(`accounts: ${accounts ? `on (sign-in required; Google ${google ? 'on' : 'off'})` : 'off'}`);
 
+// What the models, the voice and the grammar parser get is read by the server itself (phase 2, sources.mjs).
+let translateHandler = null;
+const sources = createSources({ yt: youtube, db, madeFor: (v) => translateHandler?.madeFor(v) ?? [] });
+if (llmOn) translateHandler = createTranslateHandler({ ...named, cacheDir, chat, sources, pivot, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12),
+  ...(llmLayer.useTinker ? { jobs: 8, parallel: 4 } : {}) });
+
 const handler = createHandler({
   auth: accounts,
   sync: accounts ? createSync({ db }) : null,
   youtube,
-  parse: parseWorker ? createParseHandler({ worker: parseWorker, info }) : null,
+  parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).
-  tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, limits: {
+  tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, sources, limits: {
     ...(process.env.TTS_NEW_PER_10MIN ? { newPer10Min: Number(process.env.TTS_NEW_PER_10MIN) } : {}),
     ...(process.env.TTS_CHARS_PER_DAY ? { charsPerDay: Number(process.env.TTS_CHARS_PER_DAY) } : {}),
     ...(process.env.TTS_CACHED_PER_MIN ? { cachedPerMin: Number(process.env.TTS_CACHED_PER_MIN) } : {}),
@@ -113,11 +120,10 @@ const handler = createHandler({
   publicOrigin: process.env.PUBLIC_ORIGIN ?? '',
   parsePerMinute: Number(process.env.PARSE_PER_MINUTE ?? 60),
   nlpStatus: info,
-  translate: llmOn ? createTranslateHandler({ ...named, cacheDir, chat, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12),
-    ...(llmLayer.useTinker ? { jobs: 8, parallel: 4 } : {}) }) : null,
-  define: llmOn ? createDefineHandler({ llm: named, cacheDir: defineCacheDir, chat,
+  translate: translateHandler,
+  define: llmOn ? createDefineHandler({ llm: named, cacheDir: defineCacheDir, chat, sources,
     dictionary: (lang, form) => db.dict(lang, form), dictionaryFirst: () => !llmLayer.status().provider.startsWith('tinker') }) : null,
-  sentence: llmOn ? createSentenceHandler({ llm: named, cacheDir: defineCacheDir, chat }) : null,
+  sentence: llmOn ? createSentenceHandler({ llm: named, cacheDir: defineCacheDir, chat, sources }) : null,
   llmStatus: llmOn ? async () => { const local = await ollamaStatus(llm); return { ok: llmLayer.useTinker || local.ok, ...llmLayer.status(), local }; } : null,
   appConfig: { pivot },
   run,
