@@ -22,22 +22,32 @@ export class SentenceError extends Error {
   constructor(public readonly code: 'unavailable' | 'rate-limit' | 'network' | 'failed' | 'cancelled') { super(code); }
 }
 
-/** One sentence translated by Balonca's server (local model), for a saved word whose video had no such track. */
-export async function translateSentence(opts: { text: string; from: string; to: string; signal?: AbortSignal; fetchImpl?: typeof fetch }): Promise<string> {
+/** What /api/sentence translates: a saved word's sentence, or a sentence of a library text (phase 2). */
+export type SentenceSource = { wordId: string } | { libraryId: string; text: string };
+
+/**
+ * One sentence translated by Balonca's server, which reads it from the account itself. Something just saved may
+ * not have reached the account yet: then the device syncs once and asks again. `en`: the English it was made
+ * from (Turkish via English).
+ */
+export async function translateSentence(opts: { source: SentenceSource; to: string; signal?: AbortSignal; fetchImpl?: typeof fetch; flush?: () => Promise<void> }): Promise<{ text: string; en?: string }> {
   const doFetch = opts.fetchImpl ?? fetch.bind(globalThis);
-  let res: Response;
-  try {
-    res = await doFetch(`${BASE}/sentence`, {
-      method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: opts.text, from: opts.from, to: opts.to }),
-    });
-  } catch {
-    throw new SentenceError(opts.signal?.aborted ? 'cancelled' : 'network');
-  }
-  const body = (await res.json().catch(() => null)) as { text?: string; error?: string } | null;
+  const ask = async () => {
+    try {
+      return await doFetch(`${BASE}/sentence`, {
+        method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...opts.source, to: opts.to }),
+      });
+    } catch {
+      throw new SentenceError(opts.signal?.aborted ? 'cancelled' : 'network');
+    }
+  };
+  let res = await ask();
+  if (res.status === 404 && opts.flush) { await opts.flush().catch(() => {}); res = await ask(); }
+  const body = (await res.json().catch(() => null)) as { text?: string; en?: string; error?: string } | null;
   if (!res.ok || typeof body?.text !== 'string') {
     const e = body?.error ?? '';
-    throw new SentenceError(e === 'rate-limit' ? 'rate-limit' : e.startsWith('llm-unreachable') || e === 'llm-model-missing' || !body ? 'unavailable' : 'failed');
+    throw new SentenceError(e === 'rate-limit' ? 'rate-limit' : e.startsWith('llm-unreachable') || e === 'llm-model-missing' || e === 'not-in-source' || e === 'not-in-library' || !body ? 'unavailable' : 'failed');
   }
-  return body.text;
+  return { text: body.text, ...(typeof body.en === 'string' ? { en: body.en } : {}) };
 }

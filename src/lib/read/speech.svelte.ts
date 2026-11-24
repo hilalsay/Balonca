@@ -5,7 +5,7 @@
  * The reader page loads a text's sentences; the word card and the review use `say` for a single word or sentence.
  */
 import { app } from '../state.svelte';
-import { nlpInfo, ttsUrl } from './api';
+import { nlpInfo, ttsUrl, type SpeechSource } from './api';
 
 export interface Line { i: number; text: string }
 export type Engine = 'server' | 'device';
@@ -61,6 +61,8 @@ class Speech {
   private serverDown = new Set<string>();
   private lines: Line[] = [];
   private lang = '';
+  /** The library text being read (the server reads its sentences only from there). */
+  private libId = '';
   private run = 0;
   private audio: HTMLAudioElement | null = null;
   private raf = 0;
@@ -94,7 +96,8 @@ class Speech {
   canRead(lang: string) { return this.engineFor(lang) !== null; }
 
   /** Gives the reader a text. `onLine` hears about every sentence that starts. */
-  load(lang: string, lines: Line[], hooks: { onLine?: (i: number) => void; onEnd?: () => void } = {}) {
+  load(lang: string, lines: Line[], hooks: { onLine?: (i: number) => void; onEnd?: () => void } = {}, libId = '') {
+    this.libId = libId;
     this.stop();
     this.lang = lang;
     this.lines = lines;
@@ -133,13 +136,16 @@ class Speech {
   /** Jumps to a sentence and reads just there on (used when a sentence is tapped while reading). */
   jump(i: number) { if (this.playing) this.play(i); else this.index = i; }
 
-  /** Reads one word or sentence once, outside the text (word card, review). `slow` reads it at 70 %. */
-  async say(lang: string, text: string, opts: { slow?: boolean } = {}) {
+  /**
+   * Reads one word or sentence once, outside the text (word card, review). `slow` reads it at 70 %. `src` says
+   * where it comes from for Balonca's voice (default: `text` is one word).
+   */
+  async say(lang: string, text: string, opts: { slow?: boolean; src?: SpeechSource } = {}) {
     this.pause();
     const engine = this.engineFor(lang);
     if (!engine) { this.problem = 'no-voice'; return; }
     const run = ++this.run;
-    await this.speak(engine, lang, text, run, { rate: app.settings.readRate * (opts.slow ? 0.7 : 1), track: false });
+    await this.speak(engine, lang, text, run, { rate: app.settings.readRate * (opts.slow ? 0.7 : 1), track: false, src: opts.src ?? { word: text } });
   }
 
   private async speakCurrent() {
@@ -160,20 +166,20 @@ class Speech {
   }
 
   /** Speaks `text`; resolves true when it was heard to the end, false on a problem or when interrupted. */
-  private speak(engine: Engine, lang: string, text: string, run: number, o: { rate: number; track: boolean }): Promise<boolean> {
+  private speak(engine: Engine, lang: string, text: string, run: number, o: { rate: number; track: boolean; src?: SpeechSource }): Promise<boolean> {
     this.word = null;
     return engine === 'server' ? this.speakServer(lang, text, run, o) : this.speakDevice(lang, text, run, o);
   }
 
-  private speakServer(lang: string, text: string, run: number, o: { rate: number; track: boolean }): Promise<boolean> {
+  private speakServer(lang: string, text: string, run: number, o: { rate: number; track: boolean; src?: SpeechSource }): Promise<boolean> {
     const a = (this.audio ??= new Audio());
     a.preload = 'auto';
-    a.src = ttsUrl(lang, text);
+    a.src = ttsUrl(lang, o.src ?? { lib: this.libId, text });
     a.playbackRate = o.rate;
     this.loading = true;
     // Warm the next sentence while this one plays.
     const next = o.track ? this.lines[this.index + 1] : null;
-    if (next) void fetch(ttsUrl(lang, next.text)).catch(() => {});
+    if (next) void fetch(ttsUrl(lang, { lib: this.libId, text: next.text })).catch(() => {});
     return new Promise((resolve) => {
       const done = (ok: boolean) => {
         a.onended = a.onerror = a.onplaying = null;

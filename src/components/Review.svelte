@@ -64,7 +64,7 @@
       {:else}
         <div class="back" aria-live="polite">
           <div class="label muted">{t('review.context')}</div>
-          <p class="sentence" lang={card.lang}>{#each parts as p}{#if p.isWord && p.key === card.w}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}{#if speech.canRead(card.lang)} <button class="say" onclick={() => card && speech.say(card.lang, card.ctx)} aria-label={t('speak.sentence')} title={t('speak.sentence')}><Icon name="speaker" size={18} /></button>{/if}</p>
+          <p class="sentence" lang={card.lang}>{#each parts as p}{#if p.isWord && p.key === card.w}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}{#if speech.canRead(card.lang)} <button class="say" onclick={() => card && speech.say(card.lang, card.ctx, { src: { wordId: card.id } })} aria-label={t('speak.sentence')} title={t('speak.sentence')}><Icon name="speaker" size={18} /></button>{/if}</p>
           {#each [...card.trans].sort((a, b) => Number(b.lang === app.settings.meaningLang) - Number(a.lang === app.settings.meaningLang)) as tr}<p class="trans" lang={tr.lang}>{tr.text}</p>{/each}
           {#if meaning}
             <div class="label muted">{t('meaning.here')}</div>

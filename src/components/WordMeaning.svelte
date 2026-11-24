@@ -4,6 +4,7 @@
   import { t, i18n } from '../lib/i18n/index.svelte';
   import { langName } from '../lib/languages';
   import { AUTO_LANGS } from '../lib/settings';
+  import { sync } from '../lib/sync.svelte';
   import { defineWord, posKey, DefineError } from '../lib/words/define';
   import type { SavedWord } from '../lib/types';
   import type { MessageKey } from '../lib/i18n/tr';
@@ -35,7 +36,7 @@
     ctl = new AbortController();
     loading = true; error = null;
     try {
-      const res = await defineWord({ word: word.w, lang: word.lang, to, ctx: word.ctx, signal: ctl.signal });
+      const res = await defineWord({ word: word.w, lang: word.lang, to, ctx: word.ctx, ref: { wordId: word.id }, signal: ctl.signal, flush: () => sync.flush() });
       if (res.temporary) error = t('pop.temporary'); // dictionary unreachable: do not keep a stopgap guess
       else app.setMeaning(word.id, to, res);
     } catch (e) {

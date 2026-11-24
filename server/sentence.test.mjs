@@ -63,3 +63,14 @@ test('uses the stronger model configured for the target language', async () => {
   await h(req({ wordId: 'nl:gaat', to: 'en' }), res(), '?', user);
   expect(seen).toEqual(['big', 'm']);
 });
+
+test('makes Turkish from English when the pivot is on, and answers both', async () => {
+  const { user, sources } = world();
+  const chat = async (_u, body) => {
+    const sys = body.messages[0].content;
+    return { status: 200, content: sys.includes('into English') ? '{"1": "How are you?"}' : '{"1": "Nasılsın?"}' };
+  };
+  const h = createSentenceHandler({ llm, chat, sources, pivot: 'en' });
+  const r = res(); await h(req({ wordId: 'nl:gaat', to: 'tr' }), r, '?', user);
+  expect(r.body).toEqual({ text: 'Nasılsın?', en: 'How are you?' });
+});

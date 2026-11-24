@@ -123,7 +123,7 @@ const handler = createHandler({
   translate: translateHandler,
   define: llmOn ? createDefineHandler({ llm: named, cacheDir: defineCacheDir, chat, sources,
     dictionary: (lang, form) => db.dict(lang, form), dictionaryFirst: () => !llmLayer.status().provider.startsWith('tinker') }) : null,
-  sentence: llmOn ? createSentenceHandler({ llm: named, cacheDir: defineCacheDir, chat, sources }) : null,
+  sentence: llmOn ? createSentenceHandler({ llm: named, cacheDir: defineCacheDir, chat, sources, pivot }) : null,
   llmStatus: llmOn ? async () => { const local = await ollamaStatus(llm); return { ok: llmLayer.useTinker || local.ok, ...llmLayer.status(), local }; } : null,
   appConfig: { pivot },
   run,

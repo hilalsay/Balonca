@@ -52,7 +52,7 @@
     grBusy = true;
     // The next sentence too, so stepping on is instant.
     const next = sents[idx + 1]?.text;
-    parseSentences(doc.lang, next ? [text, next] : [text], { signal: ctl.signal })
+    parseSentences(doc.lang, next ? [text, next] : [text], { signal: ctl.signal, ref: { libraryId: doc.id } })
       .then(([toks]) => { if (!ctl.signal.aborted) gram = analyze(toks, doc.lang); })
       .catch((e) => { if (!ctl.signal.aborted) grErr = e instanceof GrammarError && e.code === 'rate-limit' ? 'gr.err.rate' : 'gr.err'; })
       .finally(() => { if (!ctl.signal.aborted) grBusy = false; });
@@ -77,8 +77,8 @@
 
     {#if readable}
       <div class="listen">
-        <button onclick={() => s && speech.say(doc.lang, s.text)}><Icon name="speaker" size={18} /> {t('read.listen')}</button>
-        <button onclick={() => s && speech.say(doc.lang, s.text, { slow: true })}>🐢 {t('read.slow')}</button>
+        <button onclick={() => s && speech.say(doc.lang, s.text, { src: { lib: doc.id, text: s.text } })}><Icon name="speaker" size={18} /> {t('read.listen')}</button>
+        <button onclick={() => s && speech.say(doc.lang, s.text, { slow: true, src: { lib: doc.id, text: s.text } })}>🐢 {t('read.slow')}</button>
         <button onclick={() => onplay(i)}>▶ {t('read.fromHere')}</button>
       </div>
     {/if}

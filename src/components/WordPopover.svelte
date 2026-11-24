@@ -6,6 +6,7 @@
   import { t, i18n } from '../lib/i18n/index.svelte';
   import { langName } from '../lib/languages';
   import { AUTO_LANGS, type AutoLang } from '../lib/settings';
+  import { sync } from '../lib/sync.svelte';
   import { defineWord, posKey, DefineError, DEFINE_ENABLED } from '../lib/words/define';
   import { wordId } from '../lib/words/bags';
   import type { WordMeaning } from '../lib/types';
@@ -51,7 +52,7 @@
     if (!cur || !lang || ready || !DEFINE_ENABLED) { loading = false; return; }
     const c = (ctl = new AbortController());
     loading = true;
-    defineWord({ word: cur.key, lang: cur.lang, to: lang, ctx: cur.ctx, signal: c.signal })
+    defineWord({ word: cur.key, lang: cur.lang, to: lang, ctx: cur.ctx, ref: cur.doc ? { libraryId: cur.doc } : { v: app.vid ?? '' }, signal: c.signal, flush: () => sync.flush() })
       .then((m) => {
         if (!m.temporary) memo.set(memoKey(cur, lang), m);
         if (c.signal.aborted) return;

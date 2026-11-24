@@ -24,25 +24,27 @@ describe('readEvents', () => {
 });
 
 describe('serverTranslate', () => {
-  const cues = [{ start: 0, end: 1, text: 'Hoi.' }, { start: 1, end: 2, text: 'Dag.' }];
-  it('delivers cues as they stream and resolves with all of them', async () => {
+  const source = { v: 'abcdefghijk', code: 'nl', kind: 'auto' as const };
+  it('names the source, never sends text, and delivers cues as they stream', async () => {
     const seen: number[] = [];
-    let queued = -1;
+    let queued = -1, sent = '';
+    const stream = fakeFetch(200, ndjson([
+      { type: 'meta', total: 2, model: 'm', cached: 0 }, { type: 'queued', ahead: 1 }, { type: 'ping' },
+      { type: 'cues', done: 1, cues: [{ start: 0, end: 1, text: 'Merhaba.' }] },
+      { type: 'cues', done: 2, cues: [{ start: 1, end: 2, text: 'Güle güle.' }] }, { type: 'done' },
+    ]));
     const res = await serverTranslate({
-      cues, from: 'nl', to: 'tr', signal: new AbortController().signal,
+      source, to: 'tr', signal: new AbortController().signal,
       onCues: (_c, done) => seen.push(done), onQueued: (n) => (queued = n),
-      fetchImpl: fakeFetch(200, ndjson([
-        { type: 'meta', total: 2, model: 'm', cached: 0 }, { type: 'queued', ahead: 1 }, { type: 'ping' },
-        { type: 'cues', done: 1, cues: [{ start: 0, end: 1, text: 'Merhaba.' }] },
-        { type: 'cues', done: 2, cues: [{ start: 1, end: 2, text: 'Güle güle.' }] }, { type: 'done' },
-      ])),
+      fetchImpl: (async (u: RequestInfo | URL, init?: RequestInit) => { sent = String(init?.body); return stream(u, init); }) as typeof fetch,
     });
+    expect(JSON.parse(sent)).toEqual({ v: 'abcdefghijk', code: 'nl', kind: 'auto', to: 'tr' });
     expect(res.map((c) => c.text)).toEqual(['Merhaba.', 'Güle güle.']);
     expect(seen).toEqual([1, 2]);
     expect(queued).toBe(1);
   });
   it('maps server errors to translate error codes', async () => {
-    const run = (f: typeof fetch) => serverTranslate({ cues, from: 'nl', to: 'tr', signal: new AbortController().signal, fetchImpl: f });
+    const run = (f: typeof fetch) => serverTranslate({ source, to: 'tr', signal: new AbortController().signal, fetchImpl: f });
     await expect(run(fakeFetch(200, ndjson([{ type: 'meta', total: 2 }, { type: 'error', error: 'llm-unreachable' }]))))
       .rejects.toMatchObject({ code: 'unavailable' });
     await expect(run(fakeFetch(429, ['{"error":"rate-limit"}']))).rejects.toMatchObject({ code: 'rate-limit' });

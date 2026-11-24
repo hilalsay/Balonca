@@ -136,13 +136,16 @@ class AutoSubs {
           if (!alive()) return;
         }
 
-        // Turkish comes out better from the English translation than straight from e.g. Dutch.
-        const via = serverConfig.pivot === 'en' && lang === PIVOT_TO && source.lang !== PIVOT ? app.tracks.find((t) => t.lang === PIVOT && !t.name.endsWith(PARTIAL) && t.cues.length) : undefined;
-        const from = via ?? source;
+        // The server translates the video's own YouTube subtitle, which it reads itself (never text from here).
+        // Turkish comes out better from the English translation than straight from e.g. Dutch: the server does that.
+        const via = serverConfig.pivot === 'en' && lang === PIVOT_TO && source.lang !== PIVOT;
         const track = app.addCues([], `${source.name} → ${via ? `${PIVOT} → ` : ''}${lang}${PARTIAL}`, lang);
         try {
+          if (!list) list = await listRemoteSubs(vid, signal);
+          const yt = pickSource(list.tracks);
+          if (!yt) throw new TranslateError('unavailable', 'no-subs');
           await serverTranslate({
-            cues: $state.snapshot(from.cues), from: from.lang, to: lang, signal,
+            source: { v: vid, code: yt.code, kind: yt.kind === 'manual' ? 'manual' : 'auto' }, to: lang, signal,
             onQueued: (ahead) => { job.phase = 'queued'; job.ahead = ahead; },
             onCues: (cues, done, total) => {
               if (app.vid !== vid) return;

@@ -1,13 +1,9 @@
 import { expect, it } from 'vitest';
-import { toCues, slotOf, viaEnglish } from './translate.svelte';
-// @ts-expect-error -- plain JavaScript server module (no types)
-import { toUnits } from '../../../server/translate.mjs';
+import { same, viaEnglish } from './translate.svelte';
 
-it('keeps every sentence of a text its own unit on the server', () => {
-  const sents = ['Ik heet Sam', 'Ik woon in Gent.', 'Een zin zonder punt', 'Nog een zin?'];
-  const units = toUnits(toCues(sents));
-  expect(units.map((u: { text: string }) => u.text)).toEqual(sents);
-  expect(units.map((u: { start: number; end: number; text: string }) => slotOf(u))).toEqual([0, 1, 2, 3]);
+it('compares sentences however they are spaced', () => {
+  expect(same('Ik  heet\u200b Sam.', ' Ik heet Sam. ')).toBe(true);
+  expect(same('Ik heet Sam.', 'Ik heet Bo.')).toBe(false);
 });
 
 it('translates into Turkish via English', () => {

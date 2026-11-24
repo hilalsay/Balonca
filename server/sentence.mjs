@@ -22,7 +22,8 @@ export function parseSentenceRequest(raw) {
 }
 
 /** Results are cached on disk per sentence, languages and model (per user: these are the user's own texts). */
-export function createSentenceHandler({ llm, cacheDir = '', chat, sources } = {}) {
+/** pivot 'en': Turkish is made from the English translation, which is answered too ({ text, en }). */
+export function createSentenceHandler({ llm, cacheDir = '', chat, sources, pivot = 'off' } = {}) {
   const cache = diskCache(cacheDir);
   return (req, res, ip, user) => llmContext.run({}, () => sentenceRoute(req, res, user));
   async function sentenceRoute(req, res, user) {
@@ -39,17 +40,23 @@ export function createSentenceHandler({ llm, cacheDir = '', chat, sources } = {}
       text = q.text; from = lib.lang;
     }
     if (!LANG_RE.test(from) || from === q.to) throw new ApiError(400, 'bad-request');
-    const key = `s2-${user?.id ?? 0}-` + createHash('sha256').update(JSON.stringify([modelFor(llm, q.to), from, q.to, text])).digest('hex').slice(0, 32);
-    let out = await cache.get(key);
-    if (!out) {
-      const ctl = new AbortController();
-      res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
-      const tr = ollamaTranslator({ ...llm, model: modelFor(llm, q.to), from, to: q.to, ...(chat ? { chat } : {}) });
-      const [t] = await tr([text], [], ctl.signal);
-      if (!t || t === text) throw new ApiError(502, 'llm-bad-response');
-      out = { text: t };
-      if (!fellBack()) await cache.set(key, out); // a fallback answer is shown, not kept
-    }
+    const ctl = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
+    const one = async (src, a, b) => {
+      const key = `s2-${user?.id ?? 0}-` + createHash('sha256').update(JSON.stringify([modelFor(llm, b), a, b, src])).digest('hex').slice(0, 32);
+      const hit = await cache.get(key);
+      if (hit?.text) return hit.text;
+      const tr = ollamaTranslator({ ...llm, model: modelFor(llm, b), from: a, to: b, ...(chat ? { chat } : {}) });
+      const [t] = await tr([src], [], ctl.signal);
+      if (!t || t === src) throw new ApiError(502, 'llm-bad-response');
+      if (!fellBack()) await cache.set(key, { text: t }); // a fallback answer is shown, not kept
+      return t;
+    };
+    let out;
+    if (pivot === 'en' && q.to === 'tr' && from !== 'en') {
+      const en = await one(text, from, 'en');
+      out = { text: await one(en, 'en', q.to), en };
+    } else out = { text: await one(text, from, q.to) };
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(out));
   }

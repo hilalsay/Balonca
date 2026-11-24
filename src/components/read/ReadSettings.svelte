@@ -5,7 +5,7 @@
   import type { Settings } from '../../lib/settings';
 
   /** `sample`: a sentence of the open text, to try a voice with. */
-  let { lang, sample, onclose }: { lang: string; sample: string; onclose: () => void } = $props();
+  let { lang, sample, doc, onclose }: { lang: string; sample: string; doc: string; onclose: () => void } = $props();
 
   const server = $derived(speech.serverLangs.includes(lang));
   const deviceVoices = $derived(speech.deviceVoices(lang));
@@ -50,7 +50,7 @@
           </select>
         </label>
       {/if}
-      {#if engine}<button class="try" onclick={() => speech.say(lang, sample)}>🔊 {t('read.set.try')}</button>{/if}
+      {#if engine}<button class="try" onclick={() => speech.say(lang, sample, { src: { lib: doc, text: sample } })}>🔊 {t('read.set.try')}</button>{/if}
     </section>
 
     <section>
