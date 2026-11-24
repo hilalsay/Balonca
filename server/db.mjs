@@ -43,6 +43,9 @@ const MIGRATIONS = [
    CREATE INDEX events_user_at ON events(user_id, at);
    CREATE TABLE llm_usage (id INTEGER PRIMARY KEY, user_id INTEGER, at INTEGER NOT NULL, provider TEXT NOT NULL,
      model TEXT NOT NULL, purpose TEXT NOT NULL, input_tokens INTEGER, output_tokens INTEGER, cost_usd REAL);`,
+  // 2: a dictionary made once (phase 3b): meanings of frequent word forms, so lookups need no model later
+  `CREATE TABLE dictionary (lang TEXT NOT NULL, form TEXT NOT NULL, lemma TEXT, data TEXT NOT NULL, source TEXT NOT NULL,
+     created_at INTEGER NOT NULL, PRIMARY KEY (lang, form));`,
 ];
 
 /** Opens (and creates or upgrades) the database. ':memory:' for tests. */
@@ -104,6 +107,11 @@ function repo(db) {
       WHERE excluded.updated_at > library.updated_at`),
     libraryItem: q('SELECT * FROM library WHERE user_id = ? AND id = ? AND deleted = 0'),
     insertEvent: q('INSERT INTO events (user_id, type, at, meta) VALUES (?, ?, ?, ?)'),
+    dictGet: q('SELECT lemma, data, source FROM dictionary WHERE lang = ? AND form = ?'),
+    dictPut: q(`INSERT INTO dictionary (lang, form, lemma, data, source, created_at) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (lang, form) DO UPDATE SET lemma = excluded.lemma, data = excluded.data, source = excluded.source, created_at = excluded.created_at`),
+    dictHas: q('SELECT 1 FROM dictionary WHERE lang = ? AND form = ?'),
+    dictCount: q('SELECT lang, COUNT(*) n FROM dictionary GROUP BY lang'),
   };
   return {
     raw: db,
@@ -140,6 +148,10 @@ function repo(db) {
     putLibrary: (u, x) => s.putLibrary.run(x.id, u, x.kind, x.title ?? null, x.url ?? null, x.vid ?? null, x.body ?? null, x.meta ?? null,
       x.createdAt, x.openedAt ?? null, x.updatedAt, x.deleted ? 1 : 0),
     libraryItem: (u, id) => s.libraryItem.get(u, id) ?? null,
+    dict: (lang, form) => { const r = s.dictGet.get(lang, form); return r ? { lemma: r.lemma, source: r.source, ...JSON.parse(r.data) } : null; },
+    putDict: (lang, form, lemma, data, source, at) => s.dictPut.run(lang, form, lemma, JSON.stringify(data), source, at),
+    hasDict: (lang, form) => !!s.dictHas.get(lang, form),
+    dictCounts: () => Object.fromEntries(s.dictCount.all().map((r) => [r.lang, r.n])),
     event: (userId, type, at, meta) => s.insertEvent.run(userId ?? null, type, at, meta ? JSON.stringify(meta) : null),
   };
 }

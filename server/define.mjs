@@ -206,11 +206,39 @@ export function parseDefineRequest(raw) {
 }
 
 /** POST /api/define handler. Results are cached on disk per word, language, sentence and model. */
-export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl } = {}) {
+/**
+ * A meaning from the dictionary made in phase 3b (no model, no Wiktionary): the shape /api/define answers.
+ * null when there is no usable entry in that language.
+ */
+export function fromDictionary(entry, word, to) {
+  if (!entry || entry.skip || (to !== 'tr' && to !== 'en')) return null;
+  const list = entry[to];
+  if (!Array.isArray(list) || !list.length) return null;
+  const lemma = entry.lemma || word;
+  return {
+    word, lemma, inContext: list[0], source: 'dictionary',
+    senses: list.map((meaning, i) => ({ head: lemma, pos: entry.pos ?? '', meaning, ...(to !== 'en' && entry.en?.[i] ? { en: entry.en[i] } : {}),
+      ...(i === 0 && entry.example ? { example: entry.example } : {}), ...(i === 0 ? { best: true } : {}) })),
+    ...(entry.article ? { article: entry.article } : {}),
+  };
+}
+
+/**
+ * `dictionary(lang, form)`: the phase-3b dictionary (db.dict). `dictionaryFirst()`: true when the model cannot pick
+ * the sense for the sentence (no Tinker): then every word with an entry is answered from it. With Tinker, only
+ * words with a single meaning are (the sentence cannot change their meaning).
+ */
+export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl, dictionary = null, dictionaryFirst = () => false } = {}) {
   const cache = diskCache(cacheDir);
   return (req, res) => llmContext.run({}, () => defineRoute(req, res));
   async function defineRoute(req, res) {
     const q = parseDefineRequest(await readBody(req, 20_000));
+    const entry = dictionary ? dictionary(q.lang, q.word.toLocaleLowerCase(q.lang)) : null;
+    const quick = entry && (dictionaryFirst() || (entry[q.to]?.length === 1)) ? fromDictionary(entry, q.word, q.to) : null;
+    if (quick) {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return res.end(JSON.stringify(quick));
+    }
     const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
     if (!out) {
