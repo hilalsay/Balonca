@@ -93,6 +93,8 @@ export const en: Record<MessageKey, string> = {
   'auto.target.queued': '{lang} translation is queued · {n} job(s) ahead',
   'auto.target.done': '{lang} translation ready',
   'auto.target.manual': '{lang} subtitles added from YouTube',
+  'auto.again': 'Not happy with the translation?',
+  'auto.againTo': 'Try a new translation ({lang})',
   'auto.cancel': 'Stop',
   'auto.err.bad-key': 'The translation was refused.',
   'auto.err.rate-limit': 'You reached the translation limit for this hour. Try again later.',

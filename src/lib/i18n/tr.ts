@@ -91,6 +91,8 @@ export const tr = {
   'auto.target.queued': '{lang} çeviri sırada · önünde {n} iş var',
   'auto.target.done': '{lang} çeviri hazır',
   'auto.target.manual': '{lang} altyazı YouTube’dan eklendi',
+  'auto.again': 'Çeviriyi beğenmedin mi?',
+  'auto.againTo': 'Yeni çeviri dene ({lang})',
   'auto.cancel': 'Durdur',
   'auto.err.bad-key': 'Çeviri reddedildi.',
   'auto.err.rate-limit': 'Bu saat için çeviri sınırına ulaştın. Biraz sonra tekrar dene.',

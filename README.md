@@ -133,6 +133,13 @@ under that user only. With `PIVOT=en`, Turkish is made from the English translat
 | `GET /api/tts` | `?lang&word=` (one word), `?lang&lib=&text=` (a sentence of a text), `?lang&wordId=` |
 | `POST /api/parse` | `{lang, ref:{libraryId}, sents}` (every sentence must be in the text) |
 
+**Shared pool (phase 4b).** A video translation, once complete, is offered to everyone who opens that video:
+`GET /api/translations?v=` lists the languages ready, and the app loads them at once (no model call). A learner who
+does not like it can ask for a new one (`{…, fresh: true}`): it is made again and kept as that learner's own
+version, which they keep seeing; others keep the shared one (`RETRANSLATE_PER_DAY`, default 3). Word meanings are
+kept in two halves: the word's meanings (shared by everyone, no sentence in them) and which one a sentence uses (a
+small call, cached per sentence; a sentence from someone's own text under that user only).
+
 How translation keeps small models accurate:
 - **Sentences, not lines.** Subtitle lines are cut mid-sentence ("Ik graaf naar een verborgen" / "schat."), which makes
   small models shift words between lines. Lines are joined and re-split into sentences, each with a time span

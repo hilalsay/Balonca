@@ -112,6 +112,7 @@ console.log(`accounts: ${accounts ? `on (sign-in required; Google ${google ? 'on
 let translateHandler = null;
 const sources = createSources({ yt: youtube, db, madeFor: (v) => translateHandler?.madeFor(v) ?? [] });
 if (llmOn) translateHandler = createTranslateHandler({ ...named, cacheDir, chat, sources, pivot, jobsPerHour: Number(process.env.TRANSLATE_JOBS_PER_HOUR ?? 12),
+  retranslatePerDay: Number(process.env.RETRANSLATE_PER_DAY ?? 3),
   ...(llmLayer.useTinker ? { jobs: 8, parallel: 4 } : {}) });
 
 const handler = createHandler({

@@ -19,6 +19,8 @@
   });
 
   const offer = $derived(app.ready && app.vid && !autoSubs.running ? autoSubs.offerable() : []);
+  // Finished machine translations of this video: each can be made again for this learner (phase 4b).
+  const again = $derived(app.ready && app.vid && !autoSubs.running ? autoSubs.aiTracks() : []);
   // The first translation of a video is a real question; after that the other languages are a quiet extra.
   const first = $derived(app.tracks.length === 1);
   const showJobs = $derived(autoSubs.jobs.length > 0 && (!settled || autoSubs.running));
@@ -33,7 +35,7 @@
   }
 </script>
 
-{#if SUBS_API_ENABLED && (showJobs || autoSubs.running || offer.length)}
+{#if SUBS_API_ENABLED && (showJobs || autoSubs.running || offer.length || again.length)}
   <div class="auto" class:only-more={!showJobs && !autoSubs.running && !first} role="status" aria-live="polite">
     {#if showJobs}
       <ul>
@@ -51,6 +53,7 @@
 
     {#if autoSubs.running}
       <button class="stop" onclick={() => autoSubs.cancel()}>{t('auto.cancel')}</button>
+
     {:else if offer.length}
       <div class="ask" class:first role="group" aria-label={t(first ? 'auto.ask' : 'auto.askMore')}>
         <span class="q">{t(first ? 'auto.ask' : 'auto.askMore')}</span>
@@ -67,6 +70,9 @@
         {/if}
       </div>
     {/if}
+    {#if again.length && !autoSubs.running}
+      <p class="again"><span class="q">{t('auto.again')}</span>{#each again as code}<button class="link" onclick={() => autoSubs.retranslate(code)}>{t('auto.againTo', { lang: name(code) })}</button>{/each}</p>
+    {/if}
   </div>
 {/if}
 
@@ -82,6 +88,8 @@
   li.error .txt { color: var(--danger); font-weight: 700; }
   progress { flex: 1; min-width: 60px; max-width: 160px; height: 8px; accent-color: var(--accent); }
   .stop { justify-self: end; }
+  .again { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-2); font-size: 0.92rem; color: var(--muted); }
+  .again button { min-height: 44px; }
 
   .ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
   .q { font-size: 0.92rem; color: var(--muted); }

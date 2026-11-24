@@ -142,12 +142,11 @@ const tidy = (s, max = 120) => (typeof s === 'string' ? s.replace(/[​-‍﻿]/
  * Meaning of `word` (as found in `ctx`) explained in `to`:
  *   { word, lemma, inContext, senses: [{ head, pos, meaning, example?, best? }], source: 'dictionary' | 'ai' }
  */
-export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, fetchImpl = fetch, signal }) {
-  const fromName = languageName(lang), toName = languageName(to);
+/** One JSON model call, retried once on a broken answer. */
+function makeAsk(llm, chat, signal) {
   const url = `${llm.baseUrl.replace(/\/+$/, '')}/api/chat`;
   const headers = llm.hostHeader ? { host: llm.hostHeader } : {};
-  // Picking the sense happens in English (the base model); writing in the learner's language may use a stronger one.
-  const ask = async (system, user, format, maxTokens, model = llm.model) => {
+  return async (system, user, format, maxTokens, model = llm.model) => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await chat(url, {
         model, keep_alive: '15m', format, options: { temperature: 0.1, num_ctx: 2048, num_predict: maxTokens },
@@ -159,11 +158,29 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
     }
     throw new ApiError(502, 'llm-bad-response');
   };
+}
+
+/**
+ * Which of `senses` (as /api/define answers them, English in `en` or `meaning`) the word has in `ctx`: an index.
+ * The small, sentence-bound half of a meaning (phase 4b): the senses themselves are shared by everyone.
+ */
+export async function pickBest({ word, lang, ctx, senses }, { llm, chat = chatStream, signal }) {
+  if (!ctx || senses.length < 2) return 0;
+  const ask = makeAsk(llm, chat, signal);
+  const numbered = Object.fromEntries(senses.map((s, i) => [String(i + 1), `${s.head} (${s.pos}): ${s.en ?? s.meaning}`]));
+  const p = await ask(pickPrompt(languageName(lang)), { word, sentence: ctx, senses: numbered }, pickSchema(senses.length), 24);
+  return Number.isInteger(p.best) && p.best >= 1 && p.best <= senses.length ? p.best - 1 : 0;
+}
+
+export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, fetchImpl = fetch, signal }) {
+  const fromName = languageName(lang), toName = languageName(to);
+  // Picking the sense happens in English (the base model); writing in the learner's language may use a stronger one.
+  const ask = makeAsk(llm, chat, signal);
 
   // 1. English senses: from Wiktionary, or (no entry) from the model alone.
   const dict = await lookup(word, lang, { fetchImpl, signal });
   let source = 'dictionary', senses = dict.senses, lemma = dict.lemma, best = 0;
-  if (senses.length > 1) {
+  if (senses.length > 1 && ctx) {
     const numbered = Object.fromEntries(senses.map((s, i) => [String(i + 1), `${s.head} (${s.pos}): ${s.gloss}`]));
     const p = await ask(pickPrompt(fromName), { word, sentence: ctx, senses: numbered }, pickSchema(senses.length), 24);
     if (Number.isInteger(p.best) && p.best >= 1 && p.best <= senses.length) best = p.best - 1;
@@ -257,14 +274,32 @@ export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl, dicti
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       return res.end(JSON.stringify(quick));
     }
-    const key = (own ? `${own}-` : '') + createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
-    let out = await cache.get(key);
-    if (!out) {
-      const ctl = new AbortController();
-      res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
-      out = await define(q, { llm, signal: ctl.signal, ...(chat ? { chat } : {}), ...(fetchImpl ? { fetchImpl } : {}) });
-      if (!out.temporary && !fellBack()) await cache.set(key, out); // a guess made while the dictionary was unreachable is not kept
+    // Two halves (phase 4b): the word's meanings, shared by everyone who looks it up (no sentence in them), and which
+    // of them this sentence uses (a small call, cached per sentence; a user's own sentence under that user only).
+    const models = [llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : [])];
+    const hash = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 32);
+    const baseKey = 'm1-' + hash([...models, q.word.toLocaleLowerCase(q.lang), q.lang, q.to]);
+    const ctl = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
+    const opts = { llm, signal: ctl.signal, ...(chat ? { chat } : {}), ...(fetchImpl ? { fetchImpl } : {}) };
+    let base = await cache.get(baseKey);
+    if (!base) {
+      base = await define({ ...q, ctx: '' }, opts);
+      if (!base.temporary && !fellBack()) await cache.set(baseKey, base); // a guess made while the dictionary was unreachable is not kept
     }
+    let best = 0;
+    if (q.ctx && base.senses.length > 1) {
+      const pickKey = (own ? `${own}-` : '') + 'p1-' + hash([llm.model, q.word, q.lang, q.ctx, base.senses.map((x) => x.en ?? x.meaning)]);
+      const hit = await cache.get(pickKey);
+      if (hit && Number.isInteger(hit.best)) best = hit.best;
+      else {
+        best = await pickBest({ word: q.word, lang: q.lang, ctx: q.ctx, senses: base.senses }, opts);
+        if (!fellBack()) await cache.set(pickKey, { best });
+      }
+    }
+    const senses = base.senses.map((x, i) => { const { best: _b, ...rest } = x; return i === best ? { ...rest, best: true } : rest; });
+    senses.unshift(...senses.splice(best, 1)); // the meaning in this sentence first
+    const out = { ...base, word: q.word, lemma: senses[0].head || base.lemma, inContext: senses[0].meaning, senses };
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(out));
   };

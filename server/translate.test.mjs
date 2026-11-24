@@ -353,6 +353,44 @@ describe('POST /api/translate (streamed)', () => {
   });
 });
 
+describe('shared translations (phase 4b)', () => {
+  const cues = Array.from({ length: 3 }, (_, i) => cue(i * 2, i * 2 + 2, `Zin ${i}.`));
+  const body = { v: 'abcdefghijk', code: 'nl', kind: 'auto', to: 'tr' };
+  const run = async (h, b, user) => {
+    const { PassThrough } = await import('node:stream');
+    const req = new PassThrough(); req.end(JSON.stringify(b));
+    let out = '', status = 200; const res = new PassThrough(); res.writeHead = (st) => { status = st; }; res.on('data', (d) => (out += d));
+    try { await h(req, res, 'ip', user); } catch (e) { return { status: e.status, error: e.code }; }
+    const ev = out.trim().split('\n').map((l) => JSON.parse(l));
+    return { status, ev, texts: ev.filter((e) => e.type === 'cues').flatMap((e) => e.cues.map((c) => c.text)), meta: ev.find((e) => e.type === 'meta') };
+  };
+
+  it('offers a finished translation to everyone; a retranslation stays its maker\'s own', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'balonca-pool-'));
+    let n = 0; const temps = [];
+    const makeTranslator = ({ temperature }) => async (texts) => { n++; temps.push(temperature); return texts.map((t) => `v${n}:${t}`); };
+    const h = createTranslateHandler({ cacheDir: dir, makeTranslator, sources: { transcript: async () => cues }, retranslatePerDay: 1 });
+    expect(await h.available('abcdefghijk')).toEqual([]);
+    const a = await run(h, body, { id: 1 });
+    expect(a.texts).toEqual(['v1:Zin 0.', 'v1:Zin 1.', 'v1:Zin 2.']);
+    expect(await h.available('abcdefghijk')).toEqual([{ to: 'tr', code: 'nl', kind: 'auto' }]);
+    // another user: the same translation, no model call
+    expect((await run(h, body, { id: 2 })).meta.cached).toBe(3);
+    expect(n).toBe(1);
+    // user 2 wants a new one: made at a livelier temperature, kept for user 2 only
+    const fresh = await run(h, { ...body, fresh: true }, { id: 2 });
+    expect(fresh.texts[0]).toBe('v2:Zin 0.');
+    expect(temps.at(-1)).toBe(0.7);
+    expect((await run(h, body, { id: 2 })).texts[0]).toBe('v2:Zin 0.');
+    expect((await run(h, body, { id: 1 })).texts[0]).toBe('v1:Zin 0.');
+    expect(await h.available('abcdefghijk')).toEqual([{ to: 'tr', code: 'nl', kind: 'auto' }]);
+    // limited per day, and only for signed-in users
+    expect(await run(h, { ...body, fresh: true }, { id: 2 })).toEqual({ status: 429, error: 'retranslate-limit' });
+    expect(await run(h, { ...body, fresh: true }, null)).toEqual({ status: 401, error: 'login-required' });
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('parseModels / modelFor', () => {
   it('reads "lang=model" pairs and falls back to the default model', async () => {
     const { parseModels, modelFor } = await import('./translate.mjs');

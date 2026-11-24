@@ -187,6 +187,13 @@ export function createHandler({
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');
         return await sync(req, res, url, user);
       }
+      if (url.pathname === '/api/translations') { // languages a video is already translated into (phase 4b)
+        if (!translate?.available) throw new ApiError(404, 'not-found-route');
+        if (req.method !== 'GET') throw new ApiError(405, 'method');
+        const v = url.searchParams.get('v') ?? '';
+        if (!ID_RE.test(v)) throw new ApiError(400, 'bad-request');
+        return send(200, { ready: await translate.available(v) });
+      }
       if (url.pathname === '/api/translate') {
         if (!translate) throw new ApiError(404, 'not-found-route');
         if (req.method !== 'POST') throw new ApiError(405, 'method');
