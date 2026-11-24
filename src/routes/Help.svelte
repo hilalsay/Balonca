@@ -2,6 +2,7 @@
   import { t } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
   import { tour } from '../lib/tour.svelte';
+  import { account } from '../lib/account.svelte';
 
   const faq = [1, 2, 3, 4, 5, 6, 9, 10, 11] as const;
   const keys: [string, MessageKey][] = [
@@ -23,7 +24,8 @@
       <details open={i === 0}>
         <summary>{t(`help.q${n}` as MessageKey)}</summary>
         <div class="answer">
-          <p>{t(`help.a${n}` as MessageKey)}</p>
+          <!-- Where data lives depends on whether there are accounts. -->
+          <p>{t(n === 1 && account.status === 'in' ? 'help.a1.account' : `help.a${n}` as MessageKey)}</p>
         </div>
       </details>
     {/each}

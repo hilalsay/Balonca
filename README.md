@@ -4,9 +4,10 @@ A language-learning subtitle player. Paste a YouTube link, add one or more subti
 several tracks at once (for example Dutch auto-captions plus a Turkish translation). Tap any word to drop it
 into a per-language **word bag**, then review the bag with flashcards.
 
-No accounts. Your words, progress and subtitles stay in your browser (IndexedDB). An optional small Node service
-fetches subtitles from YouTube and translates them with a local AI model (Ollama); without it the site still works as
-a plain static site.
+Accounts are optional. With `AUTH=on` people join with an invite link (e-mail + password, or Google) and their words,
+progress and texts sync between devices; without it everything stays in the browser (IndexedDB). An optional small
+Node service fetches subtitles from YouTube and translates them with an AI model (Tinker, or a local Ollama); without
+it the site still works as a plain static site.
 Videos play through YouTube's official IFrame player only; nothing is downloaded or re-hosted.
 
 ## Features

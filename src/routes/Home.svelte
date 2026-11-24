@@ -6,6 +6,7 @@
   import { watchUrl, readUrl } from '../lib/router.svelte';
   import { parseVideoId } from '../lib/player/youtube';
   import { tour } from '../lib/tour.svelte';
+  import { account } from '../lib/account.svelte';
 
   let url = $state('');
   let bad = $state(false);
@@ -93,7 +94,7 @@
   </div>
 {/if}
 
-<p class="muted private">{t('home.private')}</p>
+<p class="muted private">{t(account.status === 'in' ? 'home.private.account' : 'home.private')}</p>
 
 <style>
   /* Phones, someone who has been here: the two ways (and their buttons) come first. */
