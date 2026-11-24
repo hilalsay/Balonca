@@ -13,7 +13,8 @@
     "test": "vitest run",
     "api": "node scripts/build-shared.mjs && node server/index.mjs",
     "setup:example": "node scripts/setup-example.mjs",
-    "grammar:eval": "node scripts/grammar-gold/run.mjs"
+    "grammar:eval": "node scripts/grammar-gold/run.mjs",
+    "grammar:compare": "node scripts/grammar-eval.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
