@@ -1,7 +1,12 @@
 // A dictionary entry from the model, checked field by field (build-dictionary.mjs). No side effects, so it can be tested.
 
 const s = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
-const list = (v) => (Array.isArray(v) ? v.map((x) => s(x, 60)).filter(Boolean).slice(0, 3) : []);
+/** Up to three meanings, each once (the model sometimes repeats one: "onu; onu; o"). */
+export const list = (v) => {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set();
+  return v.map((x) => s(x, 60)).filter((x) => x && !seen.has(x.toLocaleLowerCase('tr')) && seen.add(x.toLocaleLowerCase('tr'))).slice(0, 3);
+};
 const POS = new Set(['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'numeral', 'article', 'particle', 'name']);
 
 /** Particles of separable verbs. A "separable" verb must start with one: the model also flags komen, doen, maken. */

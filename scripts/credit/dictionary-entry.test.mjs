@@ -12,6 +12,9 @@ describe('dictionary entries', () => {
     expect(cleanEntry(e({ lemma: 'opbellen', separable: true }), 'en')?.separable).toBeUndefined();
     expect(looksSeparable('op', 'nl')).toBe(false);
   });
+  it('keeps each meaning once', () => {
+    expect(cleanEntry(e({ tr: ['onu', 'onu', 'o'], en: ['give', 'Give', 'hand'] }), 'nl')).toMatchObject({ tr: ['onu', 'o'], en: ['give', 'hand'] });
+  });
   it('keeps articles and refuses skipped or empty entries', () => {
     expect(cleanEntry(e({ lemma: 'zus', pos: 'noun', article: 'De' }), 'nl')).toMatchObject({ lemma: 'zus', article: 'de' });
     expect(cleanEntry(e({ lemma: 'wild', pos: 'adjective', article: 'de' }), 'nl')?.article).toBeUndefined(); // only nouns
