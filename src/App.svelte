@@ -18,6 +18,7 @@
   import type { Component } from 'svelte';
   import { startHeartbeat } from './lib/events';
   import { player } from './lib/player/controller.svelte';
+  import { speech } from './lib/read/speech.svelte';
 
   // Active minutes for the admin panel (only while signed in).
   $effect(() => { if (account.status === 'in') return startHeartbeat(() => player.playing); });
@@ -61,6 +62,8 @@
   $effect(() => { if (gated) { try { sessionStorage.setItem('balonca.afterLogin', location.hash); } catch {} } });
   $effect(() => { if (account.status === 'in' && signIn) location.hash = '#/'; });
   $effect(() => { if (app.ready && account.status === 'in') void sync.start(); });
+  // Signed in after the app started (e-mail sign-in does not reload): ask again which voices the server has.
+  $effect(() => { if (account.status === 'in') speech.refresh(); });
   const Page = $derived(signIn || gated ? Login : router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 

@@ -75,7 +75,17 @@ class Speech {
       load();
       synth.addEventListener?.('voiceschanged', load);
     }
-    void nlpInfo().then((i) => (this.serverLangs = i.tts));
+    this.refresh();
+  }
+
+  /**
+   * Asks the server which languages Balonca's voice reads. Asked again whenever a text is opened: the first ask can
+   * fail (the app starts on the sign-in page, where the server answers 401) and would otherwise leave the device's
+   * voice reading everything until the page is reloaded.
+   */
+  refresh() {
+    if (this.serverLangs.length) return;
+    void nlpInfo().then((i) => { if (i.tts.length) this.serverLangs = i.tts; });
   }
 
   deviceVoices(lang: string): SpeechSynthesisVoice[] {
@@ -98,6 +108,7 @@ class Speech {
   /** Gives the reader a text. `onLine` hears about every sentence that starts. */
   load(lang: string, lines: Line[], hooks: { onLine?: (i: number) => void; onEnd?: () => void } = {}, libId = '') {
     this.libId = libId;
+    this.refresh();
     this.stop();
     this.lang = lang;
     this.lines = lines;
