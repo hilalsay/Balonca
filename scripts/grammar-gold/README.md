@@ -24,3 +24,8 @@ Review by a person (see "Reviewing" in tests/grammar-gold/README.md):
   unless given `--force`.
 `--dict` scores a second time with what the server adds from the phase 3b dictionary (verb lemmas, separable
 particles), read from `BALONCA_DB`; those numbers move while the dictionary grows, so the entry count is printed.
+
+Engine comparison (grammar-llm.md): `npm run grammar:compare` (`scripts/grammar-eval.mjs`) scores spaCy md, lg and
+`en_core_web_trf` (set `TRF_PYTHON`) with the rules, and the model with the prompt of `src/lib/read/grammar-model.ts`
+(falling back to spaCy md when an answer fails validation), per language and level, with validation rejects, cost
+and median latency. Model answers are cached in `.cache/grammar-eval/` by prompt hash; `--fresh` asks again.
