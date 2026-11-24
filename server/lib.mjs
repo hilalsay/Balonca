@@ -166,7 +166,8 @@ export function createHandler({
       const addr = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
       // Signed in: limits count per user (a school or dorm network shares one address), else per address.
       let user = null;
-      if (auth && url.pathname !== '/api/health') {
+      // Health and the app's settings (which translation path the server uses) say nothing about anyone.
+      if (auth && url.pathname !== '/api/health' && url.pathname !== '/api/config') {
         if (url.pathname === '/api/me' || url.pathname.startsWith('/api/auth/')) { if (await auth.route(req, res, url, addr)) return; }
         user = auth.requireUser(req);
         if (!user) throw new ApiError(401, 'login-required');
