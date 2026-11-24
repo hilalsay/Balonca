@@ -18,6 +18,7 @@ import { logError } from './redact.mjs';
 import { windowCounter } from './limits.mjs';
 import { norm, parseRef } from './sources.mjs';
 import { WORD_RE } from './define.mjs';
+import { markSeparable } from './gen/shared.mjs';
 export { windowCounter };
 
 export const NLP_LIMITS = { sents: 80, chars: 600, total: 24_000, queue: 40 };
@@ -100,7 +101,11 @@ const json = (res, status, body, extra = {}) => {
   res.end(JSON.stringify(body));
 };
 
-export function createParseHandler({ worker, info, cacheSize = 3000, sources }) {
+/**
+ * `separable(lang, infinitive)`: true when the dictionary lists the verb as separable. Particles the parser does not
+ * call ADP/PART (terug, dicht, mee) are then marked `sep` for the grammar rules (src/lib/read/grammar.ts).
+ */
+export function createParseHandler({ worker, info, cacheSize = 3000, sources, separable = null }) {
   const cache = new Map(); // `${lang}\n${sentence}` -> tokens
   return async function parseRoute(req, res, ip, user) {
     const { lang, sents, ref } = parseParseRequest(await readBody(req, 64_000));
@@ -112,7 +117,8 @@ export function createParseHandler({ worker, info, cacheSize = 3000, sources }) 
     if (todo.length) {
       const r = await worker.call({ op: 'parse', lang, sents: todo.map((k) => k.slice(lang.length + 1)) });
       todo.forEach((k, i) => {
-        cache.set(k, r.docs?.[i] ?? []);
+        const doc = r.docs?.[i] ?? [];
+        cache.set(k, separable && Array.isArray(doc) ? markSeparable(doc, lang, (inf) => separable(lang, inf)) : doc);
         if (cache.size > cacheSize) cache.delete(cache.keys().next().value);
       });
     }
