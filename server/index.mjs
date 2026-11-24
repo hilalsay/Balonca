@@ -96,7 +96,15 @@ const db = openDb(env.BALONCA_DB ?? fileURLToPath(new URL('../data/balonca.db', 
 // PUBLIC_ORIGIN/api/auth/google/callback (register that address with the client).
 const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.PUBLIC_ORIGIN
   ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: `${env.PUBLIC_ORIGIN}/api/auth/google/callback` } : null;
-const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0', google }) : null;
+// Deleting an account also removes what was cached for that user alone (their own texts' translations and meanings).
+async function forgetUser(id) {
+  const { readdir, unlink } = await import('node:fs/promises');
+  for (const [dir, prefixes] of [[cacheDir, [`lib-${id}-`, `s2-${id}-`]], [defineCacheDir, [`s2-${id}-`, `u${id}-`]]]) {
+    const names = await readdir(dir).catch(() => []);
+    for (const f of names) if (prefixes.some((p) => f.startsWith(p))) await unlink(`${dir}/${f}`).catch(() => {});
+  }
+}
+const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0', google, onDelete: forgetUser }) : null;
 console.log(`accounts: ${accounts ? `on (sign-in required; Google ${google ? 'on' : 'off'})` : 'off'}`);
 
 // What the models, the voice and the grammar parser get is read by the server itself (phase 2, sources.mjs).

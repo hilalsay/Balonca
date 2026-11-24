@@ -4,7 +4,7 @@
   import { tour } from '../lib/tour.svelte';
   import { account } from '../lib/account.svelte';
 
-  const faq = [1, 2, 3, 4, 5, 6, 9, 10, 11] as const;
+  const faq = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12] as const;
   const keys: [string, MessageKey][] = [
     ['Space', 'kbd.play'], ['← →', 'kbd.line'], ['R', 'kbd.loop'], ['F', 'kbd.full'], ['W', 'kbd.word'],
   ];

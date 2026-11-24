@@ -152,6 +152,14 @@ On a CPU, `gemma3` (4B) translates about one sentence per second: a 10-minute vi
 English output is good; Turkish is usable with occasional wrong words, and a larger model (e.g. `gemma3:12b`, ~8 GB RAM)
 improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translating.
 
+## Accounts, backups, privacy
+- `DELETE /api/me {confirm: <e-mail>}` deletes the signed-in account and all of its own data (words, texts, settings,
+  sessions, events; the user's own cached translations); invites it used stay used. In the app: Settings → My account.
+- `scripts/backup-db.mjs <db> <folder> [days]` makes a consistent copy of the database while the server runs
+  (`VACUUM INTO`), checks it, keeps it readable by its owner only and deletes copies older than `days` (14). Run it
+  nightly from cron, e.g. `30 3 * * * node /path/backup-db.mjs /path/balonca.db /path/backups 14`.
+- What is stored and where it goes is explained to users in Help → Privacy.
+
 ## Word meanings
 `POST /api/define` with `{word, lang, to, ref, ctx?}` (see the table above) answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
 1. Senses come from [Wiktionary](https://en.wiktionary.org) (`/api/rest_v1/page/definition/<word>`): grammar lines such as

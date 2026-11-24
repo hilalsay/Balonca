@@ -81,7 +81,13 @@ function repo(db) {
     countUsers: q('SELECT COUNT(*) n FROM users'),
     insertInvite: q('INSERT INTO invites (code, created_by, created_at, expires_at) VALUES (?, ?, ?, ?)'),
     invite: q('SELECT * FROM invites WHERE code = ?'),
-    useInvite: q('UPDATE invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL'),
+    useInvite: q('UPDATE invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL AND used_at IS NULL'),
+    // deleting an account: what refers to it is let go (an invite it used stays used: used_at)
+    forgetInvitesOf: q('UPDATE invites SET used_by = NULL WHERE used_by = ?'),
+    forgetInvitesBy: q('UPDATE invites SET created_by = NULL WHERE created_by = ?'),
+    deleteEventsOf: q('DELETE FROM events WHERE user_id = ?'),
+    anonUsage: q('UPDATE llm_usage SET user_id = NULL WHERE user_id = ?'),
+    deleteUser: q('DELETE FROM users WHERE id = ?'),
     invites: q('SELECT i.code, i.created_at, i.expires_at, i.used_at, u.email used_email FROM invites i LEFT JOIN users u ON u.id = i.used_by ORDER BY i.created_at DESC LIMIT 200'),
     insertSession: q('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)'),
     session: q('SELECT s.user_id, s.expires_at, u.email, u.display_name, u.is_admin, u.disabled, u.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
@@ -135,6 +141,8 @@ function repo(db) {
     touchUser: (id, at) => s.seen.run(at, id),
     createInvite: (code, by, now, expiresAt) => s.insertInvite.run(code, by, now, expiresAt),
     invite: (code) => s.invite.get(code) ?? null,
+    /** Removes an account and everything that is its own (words, texts, settings, sessions: ON DELETE CASCADE). */
+    deleteUser: (id) => tx(() => { s.forgetInvitesOf.run(id); s.forgetInvitesBy.run(id); s.deleteEventsOf.run(id); s.anonUsage.run(id); return s.deleteUser.run(id).changes === 1; })(),
     useInvite: (code, userId, now) => s.useInvite.run(userId, now, code).changes === 1,
     invites: () => s.invites.all(),
     createSession: (hash, userId, now, expiresAt, ua) => s.insertSession.run(hash, userId, now, expiresAt, ua),
