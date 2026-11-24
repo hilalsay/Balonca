@@ -72,8 +72,9 @@ what a parser happens to output.
 - `bracket`: finite verb early (in second place, or first in a question), a non-finite verb form at the end,
   something in between (*Kun je het raam dichtdoen?* has one too).
   Separable particles and `te`-infinitives do not count (they have their own notes).
-- `verbFinal`: subordinate or relative clause with the finite verb at the end and at least two words
-  (not counting the conjunction) before it.
+- `verbFinal`: subordinate or relative clause whose finite verb stands in the verb group at the end (*… dat ze
+  morgen niet kan komen*, *… die ik heb gekocht* count too), with at least two words (not counting the
+  conjunction) before that verb group.
 - `separable:<infinitive>`: only when the particle is actually split off (`belt … op`), not for
   `opstaan`/`opgebeld` written as one word.
 - `modal`: a modal verb with an infinitive (Dutch `kunnen`, `moeten`, `willen`, `mogen`, `hoeven`; English
