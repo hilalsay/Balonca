@@ -2,6 +2,7 @@
   import ConfirmButton from '../ConfirmButton.svelte';
   import { app } from '../../lib/state.svelte';
   import { t, i18n } from '../../lib/i18n/index.svelte';
+  import type { MessageKey } from '../../lib/i18n/tr';
   import { LANGUAGES, langName } from '../../lib/languages';
   import { readUrl } from '../../lib/router.svelte';
   import { splitText, allSentences, guessLang, titleFrom } from '../../lib/read/text';
@@ -10,6 +11,7 @@
   import { SAMPLES } from '../../lib/read/samples';
   import { tokenize } from '../../lib/words/tokenize';
   import { TEXT_LIMIT } from '../../lib/storage';
+  import { pdfText, PdfError } from '../../lib/read/pdf';
 
   let body = $state('');
   let title = $state('');
@@ -18,6 +20,7 @@
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement;
   let area: HTMLTextAreaElement;
+  let pdfPage = $state<{ done: number; total: number } | null>(null); // reading a PDF: its progress
 
   const guess = $derived(guessLang(body));
   const lastLang = $derived(app.texts[0]?.lang ?? 'nl');
@@ -41,13 +44,22 @@
     const f = (e.currentTarget as HTMLInputElement).files?.[0];
     (e.currentTarget as HTMLInputElement).value = '';
     if (!f) return;
-    if (f.size > TEXT_LIMIT * 4) { error = t('read.add.tooBig'); return; }
-    const text = await f.text().catch(() => '');
+    let text = '', pdfTitle = '';
+    if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+      error = null; pdfPage = { done: 0, total: 0 };
+      try { ({ text, title: pdfTitle } = await pdfText(f, (done, total) => (pdfPage = { done, total }))); }
+      catch (x) { error = t(`read.add.pdf.${x instanceof PdfError ? x.code : 'bad-file'}` as MessageKey); return; }
+      finally { pdfPage = null; }
+    } else {
+      if (f.size > TEXT_LIMIT * 4) { error = t('read.add.tooBig'); return; }
+      text = await f.text().catch(() => '');
+    }
     if (!text.trim()) { error = t('read.add.badFile'); return; }
+    if (text.length > TEXT_LIMIT) error = t('read.add.cut', { n: TEXT_LIMIT.toLocaleString(i18n.locale) });
     body = text.slice(0, TEXT_LIMIT);
-    title = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 120);
+    title = pdfTitle || f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 120);
     picked = null;
-    error = null;
+    if (text.length <= TEXT_LIMIT) error = null;
   }
 
   function sample(code: string) {
@@ -82,7 +94,7 @@
     <div class="row small muted">
       <span>{body.length ? t('read.add.count', { n: body.trim().split(/\s+/).filter(Boolean).length }) : t('read.add.tip')}</span>
       <button type="button" class="link" onclick={() => fileInput.click()}>📄 {t('read.add.file')}</button>
-      <input bind:this={fileInput} type="file" accept=".txt,text/plain" hidden onchange={fromFile} />
+      <input bind:this={fileInput} type="file" accept=".txt,text/plain,.pdf,application/pdf" hidden onchange={fromFile} />
     </div>
 
     <fieldset class="langs">
@@ -114,6 +126,8 @@
       <input bind:value={title} maxlength="120" placeholder={body.trim() ? titleFrom(body) : t('read.add.namePh')} autocomplete="off" aria-label={t('read.add.name')} />
     </details>
 
+    {#if pdfPage}<p class="muted" role="status"><span class="spin" aria-hidden="true"></span> {pdfPage.total ? t('read.add.pdf.reading', { done: pdfPage.done, total: pdfPage.total }) : t('read.add.pdf.opening')}</p>{/if}
+    {#if /^\s*https?:\/\/\S+\s*$/.test(body)}<p class="muted small" role="status">{t('read.add.isLink')}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <button class="primary go" type="submit">{t('read.add.go')} →</button>
 
@@ -178,6 +192,9 @@
   .can .yes { color: var(--good); font-weight: 700; }
   .go { min-height: 52px; border-radius: 99px; font-weight: 800; font-size: 1.05rem; }
   .error { margin: 0; color: var(--danger); font-weight: 700; }
+  .spin { display: inline-block; vertical-align: -2px; width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
   .samples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: var(--space-3); font-size: 0.92rem; }
   .samples button { min-height: 44px; border-radius: 99px; padding: 0 14px; font-weight: 700; }
   .list { display: grid; gap: var(--space-3); }
