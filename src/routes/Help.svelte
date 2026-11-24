@@ -4,7 +4,7 @@
   import { tour } from '../lib/tour.svelte';
   import { account } from '../lib/account.svelte';
 
-  const faq = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12] as const;
+  const faq = [1, 13, 2, 3, 14, 4, 5, 15, 6, 9, 10, 11, 12] as const;
   const keys: [string, MessageKey][] = [
     ['Space', 'kbd.play'], ['← →', 'kbd.line'], ['R', 'kbd.loop'], ['F', 'kbd.full'], ['W', 'kbd.word'],
   ];
@@ -16,7 +16,10 @@
   <p class="muted lead">{t('help.lead')}</p>
   <div class="card tourcard">
     <div><strong>{t('tour.button')}</strong><p class="muted">{t('tour.help')}</p></div>
-    <button class="primary" onclick={() => tour.start()}>✨ {t('tour.start')}</button>
+    <div class="tourbtns">
+      <button class="primary" onclick={() => tour.start('video')}>🎬 {t('tour.start.video')}</button>
+      <button class="primary" onclick={() => tour.start('text')}>🎧 {t('tour.start.text')}</button>
+    </div>
   </div>
 
   <div class="card faq">
@@ -60,5 +63,6 @@
   kbd { font: 700 0.85rem var(--font-body); background: var(--surface-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 2px 8px; }
   .tourcard { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: space-between; background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
   .tourcard p { margin: 4px 0 0; }
+  .tourbtns { display: flex; gap: var(--space-2); flex-wrap: wrap; }
   .tourcard button { min-height: 48px; padding: 0 22px; border-radius: 99px; font-weight: 800; }
 </style>

@@ -1,8 +1,10 @@
 # Balonca
 
-A language-learning subtitle player. Paste a YouTube link, add one or more subtitle files and watch with
-several tracks at once (for example Dutch auto-captions plus a Turkish translation). Tap any word to drop it
-into a per-language **word bag**, then review the bag with flashcards.
+A language-learning app with two ways in. **Watch:** paste a YouTube link; its subtitles come from YouTube by
+themselves and are translated while you watch (for example Dutch captions plus a Turkish translation).
+**Listen · Read · Learn:** paste a text or load a PDF and have it read aloud sentence by sentence, with each
+sentence's translation and grammar. Tap any word to drop it into a per-language **word bag**, then review the bag
+with flashcards. A short tour (4 steps per mode) is offered on first use and can be replayed from Help.
 
 Accounts are optional. With `AUTH=on` people join with an invite link (e-mail + password, or Google) and their words,
 progress and texts sync between devices; without it everything stays in the browser (IndexedDB). An optional small
@@ -12,20 +14,25 @@ Videos play through YouTube's official IFrame player only; nothing is downloaded
 
 ## Features
 - Several subtitle tracks at once (the video's own + translations): show/hide and ±0.2 s sync in Settings
-- Subtitles come from YouTube by themselves (parsers for `.json3`, `.vtt`, `.srt`); auto-caption rolling duplicates merged
+- Subtitles come from YouTube by themselves (`.json3`); auto-caption rolling duplicates merged
 - Known words ("I know this") per language, kept in backups; saved words marked everywhere, jump back to the moment, CSV export
 - Flashcard review with simple spaced repetition (again / good / easy), progress and counts
 - Transcript synced to playback, virtualized for long videos; prev/next line, repeat line, speed, fullscreen
 - Optional: hide translations until tapped, pause at the end of each line, 4 subtitle styles incl. high contrast
 - Full backup/restore of words, settings and subtitles as one JSON file
-- **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube, asks which language to
-  translate into (or uses the remembered one), and translates with a local Ollama model; lines appear while the rest
-  is translated
+- **Automatic subtitles**: open a video and Balonca fetches its own subtitle from YouTube. A translation someone
+  already made appears at once; otherwise it asks which language to translate into (or uses the remembered one) and
+  translates with an AI model (Tinker, or a local Ollama); lines appear while the rest is translated. "Try a new
+  translation" makes the learner's own version (3 a day)
 - **Tap a word while watching**: a card shows its meaning in that sentence, with "add to my words" and "I know this";
   words are coloured by status (new / learning / known) and the transcript shows what share of the video's words you know
 - **Word meanings**: 📖 next to a saved word shows its meaning in that sentence, the dictionary form, other meanings
-  and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the local model)
-- Turkish and English UI, light / dark / auto theme, mobile-first layout
+  and examples, in Turkish or English (Wiktionary senses, translated and matched to the sentence by the model)
+- **Reading mode**: texts up to 200,000 characters, pasted or from a PDF (read in the browser, 20 MB / 300 pages, no
+  OCR) or `.txt`; speech from the server (Piper) or the device, grammar from spaCy, progress kept per text
+- **Accounts** (`AUTH=on`): invite links, e-mail + password or Google, words / texts / settings synced between
+  devices, an admin page (usage, invites, accounts), deleting one's own account
+- Turkish and English UI, light / dark / auto theme, text size Normal / Large / Very large, phone and desktop layouts
 
 Keyboard: `Space` play/pause · `←` `→` previous/next line · `R` repeat line · `F` fullscreen ·
 `W` word mode (then `←` `→` to move between words, `Enter` to save).
@@ -35,7 +42,7 @@ Lighthouse (production build, mobile profile, local preview over HTTP): performa
 best practices 96–100, SEO 100. It is not a PWA (by design: no service worker or manifest).
 
 ## Setup
-Requires Node 20.19+.
+Requires Node 22.13+ (the server uses `node:sqlite`; the site alone builds on 20.19+).
 
 ```bash
 npm install
@@ -48,47 +55,32 @@ npm run preview    # serve dist/ locally
 
 The dev server drops the strict Content-Security-Policy (Vite injects inline styles); production builds keep it.
 
-## Getting subtitles
-YouTube's auto-captions can be downloaded with [yt-dlp](https://github.com/yt-dlp/yt-dlp):
+## Subtitles from YouTube
+Subtitles are fetched by the server with [yt-dlp](https://github.com/yt-dlp/yt-dlp); there is no manual upload any more.
+Things to know:
+- YouTube answers **HTTP 429 for its machine-translated captions** when asked by scripts; Balonca never uses them
+  (`auto-translated` is refused) and translates the original track itself.
+- Servers in data centres are sometimes asked to "sign in to confirm you're not a bot". The app reports that, and
+  the server pauses YouTube calls for a while (15 min, then longer).
+- Keep `yt-dlp` current: YouTube changes break old versions, and distribution packages can lag behind
+  (`pipx upgrade yt-dlp`, or a newer standalone binary). `/api/health` shows the last success.
 
-```bash
-yt-dlp --write-auto-subs --sub-langs nl --sub-format json3 --skip-download "https://youtu.be/VIDEO_ID"
-```
+`translate.py` is an old offline script (yt-dlp + the Anthropic API → `subs.json`) kept for reference; the app does
+not use it.
 
-Drop the resulting `.json3` onto the **Subtitles** tab.
-
-### Translating: two options
-1. **In the browser** (Subtitles tab, "Translation helper"): paste your Anthropic API key, choose the source
-   track and target language, watch the progress, cancel any time. The key is kept in memory (or in
-   `localStorage` if you tick "remember"), is sent only to `api.anthropic.com`, and is never part of a backup.
-   It uses Anthropic's browser-direct-access header, which is appropriate for a personal key on your own device.
-2. **Offline script** `translate.py` (kept as an alternative workflow):
-
-   ```bash
-   pip install yt-dlp anthropic
-   export ANTHROPIC_API_KEY=...
-   python translate.py                                   # uses the default video inside the script
-   python translate.py "https://youtu.be/VIDEO_ID" nl Türkçe   # URL, source language code, target language
-   ```
-
-   It downloads the captions, translates them in batches of 25 and writes `subs.json`
-   (`[{start,end,text}]`), which you then load into the app like any other subtitle file.
-
-## Subtitle service (yt-dlp)
-The only server-side piece, and optional: `server/` is a ~200-line zero-dependency Node service that runs
-`yt-dlp` so the **Subtitles → Fetch subtitles from YouTube** panel can list every subtitle a video has
-(manual, original auto-captions, and YouTube's auto-translations) with the language code and its full
-Turkish/English name, filterable, and add one with a click. Without the service the rest of the app works
-unchanged and the panel explains how to add a file instead. Set `VITE_SUBS_API=off` at build time to hide it.
+## The server (`server/`)
+A zero-dependency Node service (Node ≥ 22.13, `node:sqlite`) behind nginx: YouTube subtitles through `yt-dlp`
+(`server/youtube.mjs`: persistent cache, a per-minute/hour/day budget, one call per video at a time, a circuit
+breaker), translation, word meanings, speech, grammar, accounts and sync. Without it the site still loads, but the
+video and reading modes need it for subtitles, translation and speech.
 
 ```bash
 npm run api                    # http://127.0.0.1:8787, uses the yt-dlp installed on this machine
 npm run dev                    # the dev server proxies /api to it
 ```
 
-Endpoints: `GET /api/subs?v=ID` (list), `GET /api/sub?v=ID&lang=CODE&kind=auto|manual` (download),
-`GET /api/health`. Only YouTube video ids and plain language codes are accepted, `yt-dlp` is started without a
-shell, at most 2 run at once, results are cached for 10 minutes, and each client is limited to 30 requests per minute.
+Only YouTube video ids and plain language codes are accepted and `yt-dlp` is started without a shell.
+Budget: `YT_MAX_PER_MIN` (6), `YT_MAX_PER_HOUR` (120), `YT_MAX_PER_DAY` (1000), `YT_NEW_VIDEOS_PER_USER_DAY` (30).
 The service uses **the `yt-dlp` of the operating system it runs on** (whatever is on `PATH`; it logs the version at
 startup and `/api/health` reports whether it was found). `YTDLP_BIN=/path/to/yt-dlp` is only an override.
 Install it with your system's package manager (`sudo apt install yt-dlp`, `brew install yt-dlp`, `pacman -S yt-dlp`) or
@@ -105,9 +97,10 @@ Things to know:
 - Keep `yt-dlp` current: YouTube changes break old versions, and distribution packages can lag behind. If the
   packaged one stops working, update it (`pipx upgrade yt-dlp`, or a newer package/standalone binary).
 
-## Automatic translation (Ollama)
-The same service translates subtitles with a local model through [Ollama](https://ollama.com), so it costs nothing
-per video and no text leaves your server. When a video opens with no subtitles, the app:
+## Automatic translation
+The same service translates with an AI model: [Tinker](https://thinkingmachines.ai/tinker/) (an Anthropic-compatible
+API) when a key is set, otherwise a local model through [Ollama](https://ollama.com), which also is the fallback.
+When a video opens with no subtitles, the app:
 
 1. lists the video's subtitles and picks the spoken language (YouTube's `-orig` auto-caption tells which), preferring
    a hand-made track in that language over the automatic one;
@@ -148,9 +141,16 @@ How translation keeps small models accurate:
   and Ollama is constrained to answer exactly those keys, so nothing can go missing or out of order.
 - A batch the model answered in the source language is retried once; stray characters some models append are removed.
 
-One translation runs at a time (the model runs on the CPU), others wait in a queue and are told how many jobs are
-ahead. Progress is saved to disk after every batch (`.cache/translations/`), so a repeated video is instant and an
-interrupted one resumes. Each client may start 12 new (uncached) translations per hour.
+With Tinker, up to 8 translations run at once (4 batches of one video in parallel, `LLM_CONCURRENCY` calls in all);
+with only Ollama on a CPU, one at a time. Others wait in a queue and are told how many jobs are ahead. Progress is
+saved to disk after every batch (`.cache/translations/`), so a repeated video is instant and an interrupted one
+resumes. Each user (each client, without accounts) may start `TRANSLATE_JOBS_PER_HOUR` (12) new translations per hour.
+
+Provider settings (in `/etc/balonca.env` or `.env`, never in the repository): `LLM_PROVIDER` (`tinker` | `ollama`),
+`LLM_FALLBACK` (`ollama` | `off`), `TINKER_API_KEY`, `TINKER_BASE_URL`, `TINKER_MODEL` (default
+`thinkingmachines/Inkling`), `TINKER_MODEL_<LANG>`, `LLM_CONCURRENCY` (16), `LLM_DAILY_BUDGET_USD` (over it, calls go
+to Ollama for the rest of the day), `LLM_PRICE_IN` / `LLM_PRICE_OUT`. Tinker answers 429/5xx are retried three
+times, then Ollama answers; once the credit is gone (402/403) Tinker is asked again only once an hour.
 
 Environment: `OLLAMA_URL` (default `http://127.0.0.1:11434`, `off` disables translation), `OLLAMA_MODEL`
 (default `gemma3:latest`), `OLLAMA_HOST_HEADER` (only if your Ollama checks the `Host` header),
@@ -171,8 +171,9 @@ improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translat
 `POST /api/define` with `{word, lang, to, ref, ctx?}` (see the table above) answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
 1. Senses come from [Wiktionary](https://en.wiktionary.org) (`/api/rest_v1/page/definition/<word>`): grammar lines such as
    "first-person singular present" are dropped, and "inflection of graven" is followed to *graven*.
-2. The local model only picks the sense used in the saved sentence (asked in English, the easiest task for a small
-   model) and, for Turkish or Dutch, translates the English glosses. The English original stays visible for checking.
+2. The model only picks the sense used in the sentence (asked in English) and, for Turkish or Dutch, translates the
+   English glosses. A word's meanings are kept for everyone (no sentence in them); which one a sentence uses is a
+   second, small cached call. The English original stays visible for checking.
 3. A word Wiktionary does not have (names, misheard words) gets the model's own guess, labelled `source: "ai"`.
 Results are cached on disk (`DEFINE_CACHE_DIR`, default `.cache/definitions/`), except a guess made while Wiktionary
 could not be reached. In the app, meanings are saved with the word, shown on flashcards and kept in backups.
@@ -193,8 +194,9 @@ are git-ignored. On a visitor's first visit with no saved video the app opens th
 Only use videos and captions you are allowed to use this way.
 
 ## Data and backups
-Words, settings and subtitles live in IndexedDB (database `balonca`). Use **My words → Backup** to export one
-JSON file and import it on another device (merge or replace). Data from the earlier single-file prototype
+With accounts, words, known words, texts and settings live in the account (SQLite on the server) and a copy in the
+browser's IndexedDB (database `balonca`); without accounts, only in the browser. **My words → Backup** exports one
+JSON file that can be imported on another device (merge or replace). Data from the earlier single-file prototype
 (`legacy/balonca.html`) is migrated automatically the first time the new app opens in the same browser profile.
 
 ## Project layout
@@ -204,11 +206,13 @@ src/lib/words/       tokenizer, word-bag logic, CSV               (unit-tested)
 src/lib/srs/         spaced-repetition scheduler                  (unit-tested)
 src/lib/storage/     IndexedDB, backup/restore, legacy migration  (unit-tested)
 src/lib/player/      YouTube wrapper, cue lookup/alignment, controller
-src/lib/translate/   Anthropic client, batch runner, streaming client for the server   (unit-tested)
+src/lib/translate/   batch runner, streaming client for the server   (unit-tested)
 src/lib/auto.svelte.ts  automatic subtitles: fetch source, translate into the chosen languages
 src/lib/ytsubs/      client + language filter for the subtitle service (unit-tested)
 scripts/             per-machine example-video setup (unit-tested)
-server/              yt-dlp subtitle service + Ollama translation (Node, no dependencies)  (unit-tested)
+src/lib/read/        reading mode: sentences, PDF, speech, grammar   (unit-tested)
+src/lib/tour.svelte.ts  the two tours (video, text), 4 steps each
+server/              API: YouTube, translation (server/llm: Tinker + Ollama), accounts, sync, admin (Node, no dependencies)  (unit-tested)
 src/lib/i18n/        tr.ts is the source, en.ts must cover every key
 src/components/      UI pieces      src/routes/   pages
 legacy/              the original single-file prototypes (reference only)

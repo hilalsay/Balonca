@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from '../../lib/state.svelte';
   import { t } from '../../lib/i18n/index.svelte';
+  import { tour } from '../../lib/tour.svelte';
   import { speech } from '../../lib/read/speech.svelte';
   import type { Settings } from '../../lib/settings';
 
@@ -78,6 +79,7 @@
     </section>
 
     {#if !app.settings.readHint}<button class="link" onclick={() => { app.setSetting('readHint', true); onclose(); }}>💡 {t('read.hint.again')}</button>{/if}
+    <button class="link" onclick={() => { onclose(); tour.start('text'); }}>✨ {t('tour.replay')}</button>
   </div>
 </div>
 
