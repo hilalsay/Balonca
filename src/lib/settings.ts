@@ -128,5 +128,8 @@ export const translationLang = (s: Settings): '' | AutoLang => s.transLang || (s
  * of the app reads, so every combination is still possible.
  */
 export function withTranslationLang(s: Settings, lang: AutoLang): Partial<Settings> {
-  return { transLang: lang, ...(s.autoTranslate !== 'ask' ? { autoTranslate: lang } : {}), ...(s.separateMeaning ? {} : { meaningLang: lang }) };
+  // The first choice also switches automatic translation on (good defaults); "ask every video" stays only if it
+  // was chosen on purpose later.
+  const auto = s.autoTranslate !== 'ask' || !s.transLang;
+  return { transLang: lang, ...(auto ? { autoTranslate: lang } : {}), ...(s.separateMeaning ? {} : { meaningLang: lang }) };
 }
