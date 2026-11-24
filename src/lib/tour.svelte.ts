@@ -32,7 +32,7 @@ export const STEPS: TourStep[] = [
   { route: 'watch', target: ['.controls .buttons'], title: 'tour.controls.t', text: 'tour.controls.d' },
   { route: 'watch', target: ['.side .tabs'], title: 'tour.tabs.t', text: 'tour.tabs.d' },
   { target: ['nav.bottom a[href="#/words"]', 'header nav a[href="#/words"]'], title: 'tour.words.t', text: 'tour.words.d' },
-  { target: ['nav.bottom a[href="#/help"]', 'header nav a[href="#/help"]'], title: 'tour.end.t', text: 'tour.end.d' },
+  { target: ['nav.bottom a[href="#/ayarlar"]', 'header nav a[href="#/help"]'], title: 'tour.end.t', text: 'tour.end.d' },
 ];
 
 const storage = {

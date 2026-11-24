@@ -26,7 +26,7 @@
   const shown = $derived(app.settings.mode === 'text' ? 'text' : 'video');
 </script>
 
-<section class="hero">
+<section class="hero" class:back={!!app.settings.mode}>
   <Mascot size={96} float />
   <h1>{t('home.title2')}</h1>
   <p class="muted">{t('home.lead2')}</p>
@@ -96,12 +96,14 @@
 <p class="muted private">{t('home.private')}</p>
 
 <style>
+  /* Phones, someone who has been here: the two ways (and their buttons) come first. */
+  @media (max-width: 640px) { .hero.back p { display: none; } .hero.back :global(svg) { width: 48px; } .hero.back { padding: var(--space-2) 0; } }
   .hero { display: grid; justify-items: center; text-align: center; gap: var(--space-2); padding: var(--space-5) 0 var(--space-4); }
   h1 { font-size: clamp(2rem, 7vw, 3rem); margin: 0; }
   .hero p { max-width: 38rem; margin: 0; font-size: 1.1rem; }
   .choose { text-align: center; font-size: 1.3rem; margin: 0 0 var(--space-3); }
   .modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-  .mode { position: relative; display: grid; gap: var(--space-2); align-content: start; padding: var(--space-4) var(--space-4) var(--space-4); border: 2px solid transparent; }
+  .mode { min-width: 0; grid-template-columns: minmax(0, 1fr); position: relative; display: grid; gap: var(--space-2); align-content: start; padding: var(--space-4) var(--space-4) var(--space-4); border: 2px solid transparent; }
   .mode.last { border-color: var(--accent); box-shadow: var(--shadow-lg); }
   .badge { position: absolute; top: -12px; right: 16px; background: var(--accent); color: var(--accent-ink); font: 800 0.75rem var(--font-display); padding: 4px 12px; border-radius: 99px; }
   .mhead { display: flex; align-items: center; gap: var(--space-2); }

@@ -97,3 +97,16 @@ Already one card and three answer buttons. Add keyboard hints 1/2/3 on laptops (
 ## Next step
 On approval, one PR applies this; screenshots before/after at 360, 390, 768, 1024, 1366 and 1920 px, light and
 dark, Normal and "Çok büyük".
+
+## Applied (24 November 2026)
+Approved with three changes, all applied:
+1. One "Çeviri dili" (Settings → Temel and the video's Settings tab); in Gelişmiş, "Anlamlar için farklı dil" keeps
+   every combination possible, together with "Her videoda sor".
+2. "Repeat" stays in view on both the player and the reader; only speed moved (player: ⋯ menu; reader on phones: ⚙).
+3. On a word card ✏️ stays in view; delete moved into ⋯ and comes with a five-second "Geri al".
+
+Also: an app-wide Settings page (Temel / Gelişmiş / Hesabım; Yardım is linked from it and from the header), text
+size Normal / Büyük / Çok büyük asked once on the first visit, the header language button written out, the link
+field folding away on laptops too, the reading language shown as one line when the guess is sure, every control at
+least 44×44 px. Checked on 192 screens (6 sizes × light/dark × Normal/Çok büyük × 8 screens): no sideways scrolling,
+no control under 44 px, the main action on the first screen.

@@ -132,6 +132,7 @@
   .video-col { display: grid; gap: var(--space-2); min-width: 0; }
   .url { display: flex; gap: var(--space-2); }
   .url input { flex: 1; min-width: 0; }
+  .url.folded { display: none; } /* once a video plays; ⋯ → "another video" brings it back */
   .error { color: var(--danger); margin: 0; font-weight: 700; }
   .notice { margin: 0; padding: var(--space-3); border-radius: var(--radius-sm); background: var(--accent-soft); }
   .side { padding: var(--space-3); min-width: 0; }
@@ -146,14 +147,13 @@
   @media (max-width: 760px) {
     .watch { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); }
     .video-col { position: static; flex: none; margin: 0; padding: 0; background: none; gap: 6px; }
-    .url.folded { display: none; }
     .side { display: flex; flex-direction: column; padding: 0 var(--space-2) var(--space-2); border-radius: 18px;
       height: max(300px, calc(100dvh - var(--header-h, 0px) - var(--nav-h) - env(safe-area-inset-bottom) - var(--video-h) - var(--space-2) - 2 * var(--space-3))); }
     .side :global(.tabs) { margin-bottom: var(--space-2); flex: none; }
-    .side :global(.tabs button) { min-height: 40px; font-size: 0.95rem; }
+    .side :global(.tabs button) { min-height: 44px; font-size: 0.95rem; }
     .side :global([role="tabpanel"]) { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .transcript { height: 100%; min-height: 0; }
-    .handle { all: unset; display: grid; place-items: center; height: 22px; cursor: pointer; flex: none; color: var(--muted); -webkit-tap-highlight-color: transparent; }
+    .handle { all: unset; display: grid; place-items: center; height: 44px; margin: -6px 0 -8px; cursor: pointer; flex: none; color: var(--muted); -webkit-tap-highlight-color: transparent; }
     .handle .chev { width: 26px; height: 26px; }
     .handle:focus-visible { outline: 2px solid var(--focus); border-radius: 8px; }
     .side.expanded { position: fixed; z-index: 45; left: 0; right: 0; top: 0; height: auto;

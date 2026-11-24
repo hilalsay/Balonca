@@ -59,7 +59,7 @@
     .kb { font-size: 0.8rem; gap: 3px; }
     .legend { display: none; } /* phones: one line plus the bar; the colours explain themselves */
     .kb { padding-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-    .line { flex: none; white-space: nowrap; }
+    .line { flex: 1 1 auto; min-width: 0; } /* wraps with very large text */
     .bar { flex: 1; min-width: 40px; }
   }
 </style>

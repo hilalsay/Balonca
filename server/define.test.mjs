@@ -167,3 +167,25 @@ it('reads a meaning the model wrapped one level too deep', async () => {
   const out = await define({ word: 'perron', lang: 'nl', to: 'tr', ctx: 'op het perron' }, { llm: { model: 'm', baseUrl: 'http://x' }, chat, fetchImpl });
   expect(out.inContext).toBe('peron');
 });
+
+describe('dictionary first', () => {
+  const entry = { lemma: 'zus', pos: 'noun', tr: ['kız kardeş'], en: ['sister'], example: 'Mijn zus woont hier.', article: 'de' };
+  it('turns an entry into the define answer', async () => {
+    const { fromDictionary } = await import('./define.mjs');
+    expect(fromDictionary(entry, 'zus', 'tr')).toMatchObject({ lemma: 'zus', inContext: 'kız kardeş', source: 'dictionary', article: 'de',
+      senses: [{ meaning: 'kız kardeş', en: 'sister', best: true, example: 'Mijn zus woont hier.' }] });
+    expect(fromDictionary({ skip: true }, 'x', 'tr')).toBeNull();
+    expect(fromDictionary(entry, 'zus', 'nl')).toBeNull();
+  });
+  it('answers single-meaning words without any model call', async () => {
+    const { createDefineHandler } = await import('./define.mjs');
+    let calls = 0;
+    const h = createDefineHandler({ llm: { model: 'm', baseUrl: 'http://x' }, chat: async () => { calls++; return { status: 500 }; }, dictionary: () => entry });
+    const { PassThrough } = await import('node:stream');
+    const req = new PassThrough(); req.end(JSON.stringify({ word: 'Zus', lang: 'nl', to: 'tr', ctx: 'Mijn zus.' }));
+    let body = ''; const res = new PassThrough(); res.writeHead = () => {}; res.on('data', (d) => (body += d));
+    await h(req, res);
+    expect(JSON.parse(body).inContext).toBe('kız kardeş');
+    expect(calls).toBe(0);
+  });
+});

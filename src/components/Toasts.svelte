@@ -7,12 +7,14 @@
   {#each toasts.list as x (x.id)}
     <div class="toast {x.kind}">
       <span>{x.msg}</span>
+      {#if x.action}<button class="act" onclick={() => { x.action?.run(); dismiss(x.id); }}>{x.action.label}</button>{/if}
       <button onclick={() => dismiss(x.id)} aria-label={t('common.close')}>✕</button>
     </div>
   {/each}
 </div>
 
 <style>
+  .act { min-height: 44px; padding: 0 16px; border-radius: 99px; font-weight: 800; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .toasts { position: fixed; z-index: 200; left: 50%; transform: translateX(-50%); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 8px; width: min(92vw, 460px); pointer-events: none; }
   .toast {
     pointer-events: auto; display: flex; align-items: center; gap: 8px; justify-content: space-between;

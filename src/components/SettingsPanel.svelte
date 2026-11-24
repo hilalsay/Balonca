@@ -2,15 +2,21 @@
   import { app } from '../lib/state.svelte';
   import { t, i18n } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
-  import { AUTO_LANGS, type SubStyle } from '../lib/settings';
+  import { AUTO_LANGS, translationLang, type AutoLang, type SubStyle } from '../lib/settings';
   import { langName } from '../lib/languages';
   import { SUBS_API_ENABLED } from '../lib/ytsubs/api';
   import { tour } from '../lib/tour.svelte';
   import { subAdjust } from '../lib/subadjust.svelte';
   import SubtitleList from './SubtitleList.svelte';
-  import ShowLang from './ShowLang.svelte';
+  import { autoSubs } from '../lib/auto.svelte';
 
-  const translateChoices = ['ask', ...AUTO_LANGS] as const;
+  // The one translation language; the video's own language is not offered. Choosing one also translates this video.
+  const own = $derived(app.tracks[0]?.lang ?? '');
+  const lang = $derived(translationLang(app.settings));
+  function pickLang(l: AutoLang) {
+    app.setTranslationLang(l);
+    if (autoSubs.offerable().includes(l) && !autoSubs.running) autoSubs.translateTo(l);
+  }
   const styles: SubStyle[] = ['box', 'outline', 'shadow', 'contrast'];
   // Everyday switches stay in view; the rest waits under "More settings".
   const main = [
@@ -29,29 +35,22 @@
 </script>
 
 <div class="panel">
-  <section>
-    <h3>{t('subs.title')}</h3>
-    <SubtitleList />
-    <button class="adj" onclick={() => { subAdjust.on = true; document.querySelector('.stage')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>
-      <span class="aa-ic" aria-hidden="true">Aa</span> {t('subadj.settings')}
-    </button>
-  </section>
-
   {#if SUBS_API_ENABLED}
     <section>
-      <h3>{t('settings.autoTranslate')}</h3>
-      <div class="chips" role="radiogroup" aria-label={t('settings.autoTranslate')}>
-        {#each translateChoices as code}
-          <label class="chip" class:on={app.settings.autoTranslate === code}>
-            <input type="radio" name="autotranslate" checked={app.settings.autoTranslate === code} onchange={() => app.setSetting('autoTranslate', code)} />
-            {code === 'ask' ? t('settings.autoTranslate.ask') : langName(code, i18n.locale)}
-          </label>
+      <h3>{t('settings.transLang')}</h3>
+      <div class="chips" role="radiogroup" aria-label={t('settings.transLang')}>
+        {#each AUTO_LANGS.filter((l) => l !== own) as code}
+          <button role="radio" class="chip" aria-checked={lang === code} class:on={lang === code} onclick={() => pickLang(code)}>{langName(code, i18n.locale)}</button>
         {/each}
       </div>
     </section>
   {/if}
 
-  <section><ShowLang /></section>
+  <section>
+    <button class="adj" onclick={() => { subAdjust.on = true; document.querySelector('.stage')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>
+      <span class="aa-ic" aria-hidden="true">Aa</span> {t('subadj.settings')}
+    </button>
+  </section>
 
   <section>
     {#each main as [key, label]}
@@ -63,8 +62,33 @@
   </section>
 
   <details class="more">
-    <summary>{t('settings.more')}</summary>
+    <summary>{t('settings.advancedVideo')}</summary>
     <div class="more-body">
+      <section>
+        <h3>{t('subs.title')}</h3>
+        <SubtitleList />
+      </section>
+
+      {#if SUBS_API_ENABLED}
+        <section>
+          <label class="toggle">
+            <input type="checkbox" checked={app.settings.autoTranslate === 'ask'} onchange={(e) => app.setSetting('autoTranslate', e.currentTarget.checked ? 'ask' : ((lang || 'tr') as AutoLang))} />
+            <span>{t('settings.askEach')}</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" checked={app.settings.separateMeaning} onchange={(e) => { app.setSetting('separateMeaning', e.currentTarget.checked); if (!e.currentTarget.checked && lang) app.setSetting('meaningLang', lang as AutoLang); }} />
+            <span>{t('settings.split')}</span>
+          </label>
+          {#if app.settings.separateMeaning}
+            <div class="chips" role="radiogroup" aria-label={t('settings.meaningLang')}>
+              {#each AUTO_LANGS.filter((l) => l !== own) as l}
+                <button role="radio" class="chip" aria-checked={app.settings.meaningLang === l} class:on={app.settings.meaningLang === l} onclick={() => app.setSetting('meaningLang', l)}>{langName(l, i18n.locale)}</button>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/if}
+
       <section>
         <h3>{t('settings.subtitles')}</h3>
         <div class="preview {app.settings.subStyle}" style:--sub-size="{app.settings.subSize}px" style:--sub-bg={app.settings.subBg / 100} style:--sub-scale="0.8" aria-label={t('settings.preview')}>

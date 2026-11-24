@@ -2,7 +2,7 @@ import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { TRACK_COLORS, uid, type SavedWord, type StoredTrack, type TextDoc, type WordMeaning } from './types';
 import { openBalonca, loadSettings, saveSettings, loadWords, loadKnown, saveKnown, type KnownWords, putWord, deleteWord, deleteLanguage, loadTracks, saveTracks,
   getLastVideo, setLastVideo, exportBackup, parseBackup, importBackup, loadTexts, putText, deleteText, TEXT_LIMIT, cleanWord, cleanText, type Db } from './storage';
-import { sanitizeSettings } from './settings';
+import { sanitizeSettings, FONT_SCALES, withTranslationLang, type AutoLang } from './settings';
 import { parseSubtitles } from './subtitles';
 import { detectLangFromFilename } from './languages';
 import { makeWord, toggleWord, wordId } from './words/bags';
@@ -91,15 +91,23 @@ class AppState {
   /** Mirrors theme/locale to the UI modules; `persist` is false while loading. */
   private applySettings(persist: boolean) {
     theme.value = this.settings.theme;
+    if (typeof document !== 'undefined') document.documentElement.style.fontSize = `${FONT_SCALES[this.settings.fontScale] * 100}%`;
     applyTheme();
     setLocale(this.settings.locale);
     if (persist) this.persistSettings();
   }
 
+  /** The one translation language (see settings.ts). */
+  setTranslationLang(lang: AutoLang) {
+    Object.assign(this.settings, withTranslationLang(this.settings, lang));
+    this.markSettings();
+    this.persistSettings();
+  }
+
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
     this.settings[key] = value;
     this.markSettings();
-    if (key === 'theme' || key === 'locale') this.applySettings(true);
+    if (key === 'theme' || key === 'locale' || key === 'fontScale') this.applySettings(true);
     else this.persistSettings();
   }
 
@@ -274,6 +282,14 @@ class AppState {
 
   isSaved(lang: string, key: string) {
     return this.savedIds.has(wordId(lang, key));
+  }
+
+  /** Puts a deleted word back exactly as it was ("Undo"). */
+  restoreWord(w: SavedWord) {
+    if (this.wordById.has(w.id)) return;
+    this.words = [...this.words, w];
+    if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
+    this.mark('words', w.id);
   }
 
   removeWord(id: string) {

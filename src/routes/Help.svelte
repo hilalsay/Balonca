@@ -2,7 +2,6 @@
   import { t } from '../lib/i18n/index.svelte';
   import type { MessageKey } from '../lib/i18n/tr';
   import { tour } from '../lib/tour.svelte';
-  import AccountBox from '../components/AccountBox.svelte';
 
   const faq = [1, 2, 3, 4, 5, 6, 9, 10, 11] as const;
   const keys: [string, MessageKey][] = [
@@ -12,7 +11,6 @@
 </script>
 
 <div class="help">
-  <AccountBox />
   <h1>{t('help.title')}</h1>
   <p class="muted lead">{t('help.lead')}</p>
   <div class="card tourcard">

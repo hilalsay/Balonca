@@ -17,6 +17,10 @@ export interface Settings {
   meaningLang: '' | AutoLang; // language word meanings were last shown in ('' = ask)
   colorWords: boolean; // mark words in subtitles by how well the learner knows them
   mode: '' | 'video' | 'text'; // the way of learning chosen on the home page ('' = not chosen yet)
+  fontScale: 'normal' | 'large' | 'xlarge'; // text size of the whole app
+  fontAsked: boolean; // the one-time "bigger text?" question was answered
+  separateMeaning: boolean; // word meanings in another language than translations (advanced)
+  transLang: '' | AutoLang; // the one translation language chosen in Settings ('' = not chosen yet)
   // Reading mode
   readRate: number; // speech speed, 0.5-1.5
   readEngine: 'auto' | 'server' | 'device'; // whose voice reads: Balonca's server, the device, or the best available
@@ -48,6 +52,10 @@ export const DEFAULT_SETTINGS: Settings = {
   meaningLang: '',
   colorWords: true,
   mode: '',
+  fontScale: 'normal',
+  fontAsked: false,
+  separateMeaning: false,
+  transLang: '',
   readRate: 1,
   readEngine: 'auto',
   readVoices: {},
@@ -84,6 +92,10 @@ export function sanitizeSettings(raw: unknown): Settings {
     meaningLang: oneOf(r.meaningLang, ['', ...AUTO_LANGS] as const, d.meaningLang),
     colorWords: bool(r.colorWords, d.colorWords),
     mode: oneOf(r.mode, ['', 'video', 'text'] as const, d.mode),
+    fontScale: oneOf(r.fontScale, ['normal', 'large', 'xlarge'] as const, d.fontScale),
+    fontAsked: bool(r.fontAsked, d.fontAsked),
+    separateMeaning: bool(r.separateMeaning, d.separateMeaning),
+    transLang: oneOf(r.transLang, ['', ...AUTO_LANGS] as const, d.transLang),
     readRate: clamp(r.readRate, 0.5, 1.5, d.readRate),
     readEngine: oneOf(r.readEngine, ['auto', 'server', 'device'] as const, d.readEngine),
     readVoices: voices(r.readVoices),
@@ -102,4 +114,19 @@ function voices(v: unknown): Record<string, string> {
     if (/^[a-z]{2,3}$/.test(lang) && typeof uri === 'string' && uri.length <= 200) out[lang] = uri;
   }
   return out;
+}
+
+/** How much bigger all text gets (root font size). */
+export const FONT_SCALES = { normal: 1, large: 1.15, xlarge: 1.3 } as const;
+
+/** The one "translation language" (falls back to what older settings had). */
+export const translationLang = (s: Settings): '' | AutoLang => s.transLang || (s.autoTranslate !== 'ask' ? s.autoTranslate : s.meaningLang);
+
+/**
+ * Choosing the translation language: subtitles are translated into it (unless "ask every video" is on), and word
+ * meanings follow it (unless "meanings in another language" is on). The older two settings stay the ones the rest
+ * of the app reads, so every combination is still possible.
+ */
+export function withTranslationLang(s: Settings, lang: AutoLang): Partial<Settings> {
+  return { transLang: lang, ...(s.autoTranslate !== 'ask' ? { autoTranslate: lang } : {}), ...(s.separateMeaning ? {} : { meaningLang: lang }) };
 }

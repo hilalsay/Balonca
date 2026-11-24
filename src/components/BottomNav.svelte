@@ -12,14 +12,14 @@
     ['watch', 'nav.watch', 'tv'],
     ['read', 'nav.read', 'book'],
     ['words', 'nav.words.short', 'cards'],
-    ['help', 'nav.help', 'help'],
+    ['ayarlar', 'nav.settings', 'gear'],
   ];
   const due = $derived(reviewQueue(app.words).length);
 </script>
 
 <nav class="bottom" aria-label={t('nav.main')}>
   {#each items as [route, key, icon]}
-    <a href={`#/${route === 'home' ? '' : route}`} aria-current={router.route === route ? 'page' : undefined}>
+    <a href={`#/${route === 'home' ? '' : route}`} aria-current={router.route === (route === 'ayarlar' ? 'settings' : route) ? 'page' : undefined}>
       <span class="ic">
         <Icon name={icon} size={24} />
         {#if route === 'words' && due}<span class="badge" aria-label={t('nav.due', { n: due })}>{due > 99 ? '99+' : due}</span>{/if}
