@@ -1,6 +1,10 @@
 // Grammar (sentence parsing) and speech for the reading mode, through the Python worker in nlp.py (spaCy + Piper).
-//   POST /api/parse  {lang, sents: [...]}  -> {docs: [[token...]...]}   (see nlp.py for the token shape)
-//   GET  /api/tts?lang=nl&text=...         -> audio/wav, cached on disk
+//   POST /api/parse  {lang, ref, sents: [...]}  -> {docs: [[token...]...]}   (see nlp.py for the token shape)
+//   GET  /api/tts?lang=nl&word=huis                 one word
+//   GET  /api/tts?lang=nl&lib=<id>&text=...         a sentence of a library text (must be in it)
+//   GET  /api/tts?lang=nl&wordId=<id>               the sentence a saved word came from
+//                                                   -> audio/wav, cached on disk
+// Sentences are never taken from the browser alone (phase 2): they must be found in the named source (sources.mjs).
 //   GET  /api/nlp                          -> {parse: [langs], tts: [langs]}
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -12,6 +16,8 @@ import { ApiError, LANG_RE } from './lib.mjs';
 import { readBody } from './translate.mjs';
 import { logError } from './redact.mjs';
 import { windowCounter } from './limits.mjs';
+import { norm, parseRef } from './sources.mjs';
+import { WORD_RE } from './define.mjs';
 export { windowCounter };
 
 export const NLP_LIMITS = { sents: 80, chars: 600, total: 24_000, queue: 40 };
@@ -84,9 +90,9 @@ export function parseParseRequest(raw) {
   try { b = JSON.parse(raw); } catch { throw new ApiError(400, 'bad-request'); }
   const lang = String(b?.lang ?? '').toLowerCase();
   if (!LANG_RE.test(lang) || !Array.isArray(b?.sents) || !b.sents.length || b.sents.length > NLP_LIMITS.sents) throw new ApiError(400, 'bad-request');
-  const sents = b.sents.map((s) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, NLP_LIMITS.chars));
+  const sents = b.sents.map((s) => norm(s).slice(0, NLP_LIMITS.chars));
   if (sents.some((s) => !s) || sents.join('').length > NLP_LIMITS.total) throw new ApiError(400, 'bad-request');
-  return { lang, sents };
+  return { lang, sents, ref: parseRef(b.ref) };
 }
 
 const json = (res, status, body, extra = {}) => {
@@ -94,11 +100,13 @@ const json = (res, status, body, extra = {}) => {
   res.end(JSON.stringify(body));
 };
 
-export function createParseHandler({ worker, info, cacheSize = 3000 }) {
+export function createParseHandler({ worker, info, cacheSize = 3000, sources }) {
   const cache = new Map(); // `${lang}\n${sentence}` -> tokens
-  return async function parseRoute(req, res) {
-    const { lang, sents } = parseParseRequest(await readBody(req, 64_000));
+  return async function parseRoute(req, res, ip, user) {
+    const { lang, sents, ref } = parseParseRequest(await readBody(req, 64_000));
     if (!(await info()).parse.includes(lang)) throw new ApiError(422, 'unsupported-lang');
+    if (!sources) throw new ApiError(404, 'not-found-route');
+    for (const s of new Set(sents)) if (!(await sources.contains(ref, user, s))) throw new ApiError(404, 'not-in-source');
     const keys = sents.map((s) => `${lang}\n${s}`);
     const todo = [...new Set(keys.filter((k) => !cache.has(k)))];
     if (todo.length) {
@@ -122,14 +130,32 @@ export function speakable(raw) {
   return /\p{L}/u.test(text) ? text : '';
 }
 
-/** Validates GET /api/tts. */
+/** Validates GET /api/tts: { lang, word } | { lang, ref: {libraryId}, text } | { lang, ref: {wordId} }. */
 export function parseTtsQuery(url) {
-  const lang = String(url.searchParams.get('lang') ?? '').toLowerCase();
-  const raw = String(url.searchParams.get('text') ?? '');
-  if (!LANG_RE.test(lang) || raw.length > NLP_LIMITS.chars * 2) throw new ApiError(400, 'bad-request');
-  const text = speakable(raw);
-  if (!text || text.length > NLP_LIMITS.chars) throw new ApiError(400, 'bad-request');
-  return { lang, text };
+  const q = url.searchParams;
+  const lang = String(q.get('lang') ?? '').toLowerCase();
+  if (!LANG_RE.test(lang)) throw new ApiError(400, 'bad-request');
+  if (q.has('word')) {
+    const word = String(q.get('word')).trim();
+    if (!WORD_RE.test(word)) throw new ApiError(400, 'bad-request');
+    return { lang, word };
+  }
+  if (q.has('wordId')) return { lang, ref: parseRef({ wordId: String(q.get('wordId')) }) };
+  if (q.has('lib')) {
+    const raw = String(q.get('text') ?? '');
+    if (raw.length > NLP_LIMITS.chars * 2) throw new ApiError(400, 'bad-request');
+    return { lang, ref: parseRef({ libraryId: String(q.get('lib')) }), text: norm(raw) };
+  }
+  throw new ApiError(400, 'bad-request'); // free text (?text= alone) is no longer read aloud
+}
+
+/** The text to speak for a checked query, read from its source. */
+async function ttsText(q, sources, user) {
+  if (q.word) return q.word;
+  if (!sources) throw new ApiError(404, 'not-found-route');
+  if (q.ref.wordId) { const w = await sources.savedWord(user, q.ref.wordId); if (!w.ctx) throw new ApiError(404, 'not-in-source'); return w.ctx; }
+  if (!q.text || !(await sources.contains(q.ref, user, q.text))) throw new ApiError(404, 'not-in-source');
+  return q.text;
 }
 
 /** Speech limits per client: cached audio is cheap, new speech costs CPU and disk. Settable through env. */
@@ -153,7 +179,7 @@ export async function pruneDir(dir, maxBytes) {
   }
 }
 
-export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500_000_000, limits = {}, now = Date.now }) {
+export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500_000_000, limits = {}, now = Date.now, sources }) {
   const L = { ...TTS_LIMITS, ...limits };
   const cachedLimit = windowCounter(60_000, L.cachedPerMin, now);
   const newLimit = windowCounter(600_000, L.newPer10Min, now);
@@ -172,10 +198,12 @@ export function createTtsHandler({ worker, info, cacheDir, maxCacheBytes = 1_500
   const inflight = new Map(); // one synthesis per sentence, however many ask at once
   const ready = mkdir(cacheDir, { recursive: true });
   void ready.then(() => pruneDir(cacheDir, maxCacheBytes));
-  return async function ttsRoute(req, res, url, ip = '?') {
+  return async function ttsRoute(req, res, url, ip = '?', user = null) {
     if (!cachedLimit.has(ip)) throw new ApiError(429, 'rate-limit');
     cachedLimit.add(ip);
-    const { lang, text } = parseTtsQuery(url);
+    const q = parseTtsQuery(url), lang = q.lang;
+    const text = speakable(await ttsText(q, sources, user));
+    if (!text || text.length > NLP_LIMITS.chars) throw new ApiError(400, 'bad-request');
     const voices = (await info()).tts;
     if (!voices.includes(lang)) throw new ApiError(422, 'unsupported-lang');
     await ready;

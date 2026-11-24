@@ -7,6 +7,7 @@ import path from 'node:path';
 import { llmContext, fellBack } from './llm/index.mjs';
 import { ApiError, LANG_RE } from './lib.mjs';
 import { logError } from './redact.mjs';
+import { safeOutput } from './llm/guard.mjs';
 
 export const LIMITS = { maxBody: 1_000_000, maxCues: 5000, maxText: 600 };
 
@@ -189,7 +190,7 @@ export function checkReply(obj, texts) {
     if (j !== undefined && norm(texts[j]) !== norm(texts[i])) return none;
     seen.set(v, i);
   }
-  return vals.map((t) => (t && !isLooping(t) ? t : null));
+  return vals.map((t, i) => (t && !isLooping(t) && safeOutput(texts[i], t) ? t : null));
 }
 
 /**
@@ -234,7 +235,7 @@ export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = 
       ],
     }, signal);
     const t = clean(content.split('\n').map((l) => l.trim()).find(Boolean) ?? '').replace(/^["“'‘]+|["”'’]+$/g, '').trim();
-    return /\p{L}/u.test(t) && !isLooping(t) && !isLeak(t) ? t : null;
+    return /\p{L}/u.test(t) && !isLooping(t) && !isLeak(t) && safeOutput(text, t) ? t : null;
   };
 
   const isCopy = (t, src) => norm(t) === norm(src) && /\p{L}{3}/u.test(t);
@@ -321,19 +322,26 @@ export function lane(queueMax = 6, concurrency = 1) {
   };
 }
 
-/** Validates the POST body: {from, to, cues:[{start,end,text}]}. */
+/**
+ * Validates the POST body. The browser names what to translate, never the text itself (phase 2):
+ *   { v, code, kind, to }   a YouTube subtitle (the server fetches it)
+ *   { libraryId, to }       a text of the signed-in user's library
+ */
 export function parseRequest(raw) {
   let b;
   try { b = JSON.parse(raw); } catch { throw new ApiError(400, 'bad-request'); }
-  const from = String(b?.from ?? '').toLowerCase(), to = String(b?.to ?? '').toLowerCase();
-  if (!LANG_RE.test(from) || !LANG_RE.test(to) || from === to) throw new ApiError(400, 'bad-request');
-  if (!Array.isArray(b.cues) || !b.cues.length || b.cues.length > LIMITS.maxCues) throw new ApiError(400, 'bad-request');
-  const cues = b.cues.map((c) => ({
-    start: Number(c?.start), end: Number(c?.end), text: String(c?.text ?? '').slice(0, LIMITS.maxText),
-  })).filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end));
-  if (!cues.length) throw new ApiError(400, 'bad-request');
-  return { from, to, cues };
+  const to = String(b?.to ?? '').toLowerCase();
+  if (!LANG_RE.test(to) || to.startsWith('-')) throw new ApiError(400, 'bad-request');
+  if (typeof b?.libraryId === 'string') {
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(b.libraryId)) throw new ApiError(400, 'bad-request');
+    return { libraryId: b.libraryId, to };
+  }
+  const v = String(b?.v ?? ''), code = String(b?.code ?? ''), kind = b?.kind === 'manual' ? 'manual' : b?.kind === 'auto' ? 'auto' : '';
+  if (!/^[A-Za-z0-9_-]{11}$/.test(v) || !LANG_RE.test(code) || code.startsWith('-') || !kind) throw new ApiError(400, 'bad-request');
+  return { v, code, kind, to };
 }
+/** "nl-orig", "en-US" -> "nl", "en". */
+export const baseLang = (code) => String(code).toLowerCase().replace(/-orig$/, '').split(/[-_]/)[0];
 
 export function readBody(req, max = LIMITS.maxBody) {
   return new Promise((resolve, reject) => {
@@ -375,9 +383,13 @@ export function healed(out, units) {
   return out.slice(0, Math.min(bad, start));
 }
 
+/**
+ * sources: sources.mjs (the server reads what it translates). pivot: 'en' makes Turkish from the English
+ * translation (better with a small local model); 'off' translates directly.
+ */
 export function createTranslateHandler({
   baseUrl = 'http://127.0.0.1:11434', model: defaultModel = 'gemma3:latest', models = {}, hostHeader = '', cacheDir = '',
-  jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now,
+  jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now, sources, pivot = 'off',
   chat, // model call (llm/index.mjs); default: Ollama directly
   jobs = 1, parallel = 1, // jobs at once / batches of one job at once (Tinker: several; local model: 1)
 } = {}) {
@@ -390,69 +402,127 @@ export function createTranslateHandler({
     recent.push(t); hits.set(ip, recent);
     return true;
   };
+  const digest = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 24);
+  // Translations of YouTube subtitles are shared by everyone and named after the video, so sources.mjs can tell
+  // which sentences the server itself wrote for it. A user's own texts are kept under that user only.
+  const videoKey = (v, code, kind, via, to, model) => `yt-${v}-${digest([code, kind, via, to, model])}`;
 
-  return (req, res, ip) => llmContext.run({}, () => translate(req, res, ip));
-  async function translate(req, res, ip) {
-    const { from, to, cues } = parseRequest(await readBody(req));
-    const model = modelFor({ model: defaultModel, models }, to);
-    const units = toUnits(cues);
-    const key = createHash('sha256').update(JSON.stringify([model, from, to, units.map((u) => u.text)])).digest('hex').slice(0, 32);
-    const saved = (await cache.get(key)) ?? { out: [] };
-    saved.out = healed(saved.out, units);
-    const complete = saved.out.length >= units.length;
-    if (!complete && !allow(ip)) throw new ApiError(429, 'rate-limit');
+  /** Texts of every translation made for a video (for sources.mjs). */
+  async function madeFor(v) {
+    if (!cacheDir) return [];
+    const { readdir } = await import('node:fs/promises');
+    let names = [];
+    try { names = (await readdir(cacheDir)).filter((f) => f.startsWith(`yt-${v}-`) && f.endsWith('.json')); } catch { return []; }
+    const out = [];
+    for (const f of names) { const x = await cache.get(f.slice(0, -5)); if (Array.isArray(x?.out)) out.push(...x.out.filter((t) => typeof t === 'string')); }
+    return out;
+  }
+
+  const handler = (req, res, ip, user) => llmContext.run({}, () => translate(req, res, ip, user));
+  handler.madeFor = madeFor;
+  return handler;
+
+  async function translate(req, res, ip, user) {
+    if (!sources) throw new ApiError(404, 'not-found-route');
+    const q = parseRequest(await readBody(req, 4_000));
+    // The source as units: sentences rebuilt from subtitle lines (video), or the text's own sentences (library).
+    let units, from, keyOf, srcOut = null;
+    if (q.libraryId) {
+      const lib = sources.librarySentences(user, q.libraryId);
+      from = lib.lang;
+      if (!from) throw new ApiError(400, 'bad-request');
+      units = lib.sentences.map((text, i) => ({ start: i, end: i, text }));
+      const body = digest(lib.sentences);
+      keyOf = (via, to, model) => `lib-${user.id}-${digest([q.libraryId, body, via, to, model])}`;
+    } else {
+      from = baseLang(q.code);
+      units = toUnits(await sources.transcript(q.v, q.code, q.kind, ip));
+      keyOf = (via, to, model) => videoKey(q.v, q.code, q.kind, via, to, model);
+    }
+    if (from === q.to) throw new ApiError(400, 'bad-request');
+    if (!units.length) throw new ApiError(404, 'no-subs');
 
     const ctl = new AbortController();
     res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
-    res.writeHead(200, {
-      'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff', 'x-accel-buffering': 'no', // nginx: pass events through immediately
-    });
-    const send = (ev) => { if (!res.writableEnded) res.write(`${JSON.stringify(ev)}\n`); };
-    const timed = (from, to) => units.slice(from, to).map((u, i) => ({ start: u.start, end: u.end, text: saved.out[from + i] }));
+    let started = false;
+    const send = (ev) => {
+      if (!started) {
+        started = true;
+        res.writeHead(200, {
+          'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff', 'x-accel-buffering': 'no', // nginx: pass events through immediately
+        });
+      }
+      if (!res.writableEnded) res.write(`${JSON.stringify(ev)}\n`);
+    };
+    const lib = !!q.libraryId;
+    const shape = (u, text) => (lib ? { i: u.start, src: u.text, text } : { start: u.start, end: u.end, text });
 
-    send({ type: 'meta', total: units.length, model, cached: saved.out.length });
-    if (saved.out.length) send({ type: 'cues', done: saved.out.length, cues: timed(0, saved.out.length) });
-    if (complete) { send({ type: 'done' }); return res.end(); }
-
+    // Turkish from the English translation (pivot), made first (and kept) when it is not there yet.
+    const via = pivot === 'en' && q.to === 'tr' && from !== 'en' ? 'en' : '';
+    const steps = via ? [{ from, to: via, via: '' }, { from: via, to: q.to, via }] : [{ from, to: q.to, via: '' }];
+    let counted = false;
     const heartbeat = setInterval(() => send({ type: 'ping' }), 15_000); // keeps proxies from timing out while queued
     try {
-      await queue.run(async () => {
-        const tr = makeTranslator({ baseUrl, model, hostHeader, from, to, ...(chat ? { chat } : {}) });
-        // Batches are independent (their context is the source, not earlier translations), so several may run at
-        // once; they still reach the browser in order: a batch that finishes early waits for the ones before it.
-        const todo = batches(units).filter((b) => b[0] >= saved.out.length);
-        const done = new Map();
-        let next = 0, emit = 0;
-        let chain = Promise.resolve();
-        const flush = () => (chain = chain.then(async () => { // one flush at a time keeps the order
-          while (emit < todo.length && done.has(emit)) {
-            const b = todo[emit], first = b[0];
-            saved.out.push(...done.get(emit)); done.delete(emit); emit++;
-            if (!fellBack()) await cache.set(key, saved); // after a fallback nothing more is kept (next time: the better model)
-            send({ type: 'cues', done: saved.out.length, cues: timed(first, saved.out.length) });
-          }
-        }));
-        const worker = async () => {
-          while (next < todo.length) {
-            if (ctl.signal.aborted) throw new ApiError(499, 'cancelled');
-            const k = next++, b = todo[k], first = b[0];
-            const context = units.slice(Math.max(0, first - 3), first).map((u) => u.text);
-            done.set(k, await tr(b.map((i) => units[i].text), context, ctl.signal));
-            await flush();
-          }
-        };
-        await Promise.all(Array.from({ length: Math.max(1, Math.min(parallel, todo.length)) }, worker));
-        await flush();
-      }, (ahead) => send({ type: 'queued', ahead }));
+      for (const [n, step] of steps.entries()) {
+        const last = n === steps.length - 1;
+        const model = modelFor({ model: defaultModel, models }, step.to);
+        const key = keyOf(step.via, step.to, model);
+        const saved = (await cache.get(key)) ?? { out: [] };
+        saved.out = healed(saved.out, units);
+        const complete = saved.out.length >= units.length;
+        if (!complete && !counted) { if (!allow(ip)) throw new ApiError(429, 'rate-limit'); counted = true; }
+        const timed = (a, b) => units.slice(a, b).map((u, i) => shape(u, saved.out[a + i]));
+        if (last) {
+          send({ type: 'meta', total: units.length, model, cached: saved.out.length });
+          if (saved.out.length) send({ type: 'cues', done: saved.out.length, cues: timed(0, saved.out.length) });
+        } else send({ type: 'pivot', total: units.length, done: Math.min(saved.out.length, units.length) });
+        if (!complete) await runJob({ units: srcOut ? units.map((u, i) => ({ ...u, text: srcOut[i] })) : units, saved, key, model, step, ctl,
+          onBatch: (a) => (last ? send({ type: 'cues', done: saved.out.length, cues: timed(a, saved.out.length) }) : send({ type: 'pivot', total: units.length, done: saved.out.length })),
+          onQueued: (ahead) => send({ type: 'queued', ahead }) });
+        if (!last) srcOut = saved.out.slice(0, units.length);
+      }
       send({ type: 'done' });
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(502, 'llm-failed', e?.message);
-      if (err.code !== 'cancelled') logError(`translate ${from}->${to} -> ${err.code}: ${err.detail ?? ''}`);
+      if (!started) throw err; // nothing sent yet: an ordinary JSON error
+      if (err.code !== 'cancelled') logError(`translate ${from}->${q.to} -> ${err.code}: ${err.detail ?? ''}`);
       send({ type: 'error', error: err.code });
     } finally {
       clearInterval(heartbeat);
-      res.end();
+      if (started) res.end();
     }
-  };
+  }
+
+  /** Translates the units not in `saved` yet, in order, keeping progress in the cache. */
+  async function runJob({ units, saved, key, model, step, ctl, onBatch, onQueued }) {
+    await queue.run(async () => {
+      const tr = makeTranslator({ baseUrl, model, hostHeader, from: step.from, to: step.to, ...(chat ? { chat } : {}) });
+      // Batches are independent (their context is the source, not earlier translations), so several may run at
+      // once; they still reach the browser in order: a batch that finishes early waits for the ones before it.
+      const todo = batches(units).filter((b) => b[0] >= saved.out.length);
+      const done = new Map();
+      let next = 0, emit = 0;
+      let chain = Promise.resolve();
+      const flush = () => (chain = chain.then(async () => { // one flush at a time keeps the order
+        while (emit < todo.length && done.has(emit)) {
+          const first = todo[emit][0];
+          saved.out.push(...done.get(emit)); done.delete(emit); emit++;
+          if (!fellBack()) await cache.set(key, saved); // after a fallback nothing more is kept (next time: the better model)
+          onBatch(first);
+        }
+      }));
+      const worker = async () => {
+        while (next < todo.length) {
+          if (ctl.signal.aborted) throw new ApiError(499, 'cancelled');
+          const k = next++, b = todo[k], first = b[0];
+          const context = units.slice(Math.max(0, first - 3), first).map((u) => u.text);
+          done.set(k, await tr(b.map((i) => units[i].text), context, ctl.signal));
+          await flush();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(parallel, todo.length)) }, worker));
+      await flush();
+    }, onQueued);
+  }
 }

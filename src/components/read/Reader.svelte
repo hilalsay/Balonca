@@ -6,6 +6,7 @@
   import Icon from '../Icon.svelte';
   import SentencePanel from './SentencePanel.svelte';
   import ReadSettings from './ReadSettings.svelte';
+  import { sync } from '../../lib/sync.svelte';
   import { app } from '../../lib/state.svelte';
   import { t, i18n } from '../../lib/i18n/index.svelte';
   import type { MessageKey } from '../../lib/i18n/tr';
@@ -49,8 +50,10 @@
         follow(i);
       },
       onEnd: () => { app.updateText(doc.id, { done: total }); finished = true; },
-    });
+    }, doc.id);
     app.touchText(doc.id);
+    // Voice, grammar and translation read the text from the account: make sure a just-added text is there.
+    void sync.flush();
     const at = start ?? (doc.pos > 0 ? doc.pos : null);
     if (at !== null && at < total) {
       speech.index = at;
@@ -220,7 +223,7 @@
   {/if}
 </div>
 
-{#if settingsOpen}<ReadSettings lang={doc.lang} sample={sents[here]?.text ?? ''} onclose={() => (settingsOpen = false)} />{/if}
+{#if settingsOpen}<ReadSettings lang={doc.lang} doc={doc.id} sample={sents[here]?.text ?? ''} onclose={() => (settingsOpen = false)} />{/if}
 
 <style>
   .reader { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--space-5); align-items: start; }

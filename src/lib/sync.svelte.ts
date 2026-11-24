@@ -64,6 +64,12 @@ class Sync {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void this.run(); });
   }
 
+  /** Sends what changed now (before asking the server about something just saved). Nothing without an account. */
+  async flush() {
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    await this.run();
+  }
+
   /** A change happened: sync in two seconds (many changes in a row make one request). */
   soon() {
     if (!this.meta) return;

@@ -231,7 +231,8 @@ class AppState {
   async translateWordSentence(word: SavedWord, lang: string, signal?: AbortSignal): Promise<string> {
     const local = await this.transFromTracks(word, lang);
     if (local) return local;
-    const text = await translateSentence({ text: word.ctx, from: word.lang, to: lang, signal });
+    const { sync } = await import('./sync.svelte'); // the word may not be on the account yet
+    const { text } = await translateSentence({ source: { wordId: word.id }, to: lang, signal, flush: () => sync.flush() });
     this.setTrans(word.id, lang, text);
     return text;
   }

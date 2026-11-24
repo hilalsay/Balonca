@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { llmContext, fellBack } from './llm/index.mjs';
 import { ApiError, LANG_RE } from './lib.mjs';
 import { logError } from './redact.mjs';
+import { safeOutput } from './llm/guard.mjs';
+import { norm, parseRef } from './sources.mjs';
 import { chatStream, diskCache, languageName, modelFor, readBody } from './translate.mjs';
 
 const UA = 'Balonca/0.1 (subtitle language-learning app)';
@@ -172,9 +174,10 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
     source = 'ai';
     const o = await ask(alonePrompt(fromName), { word, sentence: ctx }, aloneSchema, 300);
     lemma = tidy(o.lemma, 60) || word;
+    if (!safeOutput(`${word} ${ctx}`, lemma)) lemma = word;
     senses = (Array.isArray(o.senses) ? o.senses : []).slice(0, 3)
       .map((s) => ({ head: lemma, pos: tidy(s?.pos, 20).toLowerCase(), gloss: tidy(s?.meaning) }))
-      .filter((s) => s.gloss);
+      .filter((s) => s.gloss && safeOutput(`${word} ${ctx}`, s.gloss, { factor: 1, extra: 80 }));
     if (!senses.length) throw new ApiError(502, 'llm-bad-response');
   }
 
@@ -187,22 +190,30 @@ export async function define({ word, lang, to, ctx }, { llm, chat = chatStream, 
       glossSchema(senses.length), 80 + senses.length * 40, modelFor(llm, to));
     t = g.t ?? {};
   }
+  // A translated meaning that brings links or markup its English sense did not have is dropped (the English stays).
+  const translated = (s, i) => { const m = to !== 'en' ? tidy(flat(t[String(i + 1)])) : ''; return m && safeOutput(s.gloss, m, { factor: 3, extra: 60 }) ? m : ''; };
   const out = senses.map((s, i) => ({
-    head: s.head, pos: s.pos, meaning: (to !== 'en' ? tidy(flat(t[String(i + 1)])) : '') || s.gloss,
+    head: s.head, pos: s.pos, meaning: translated(s, i) || s.gloss,
     ...(to !== 'en' ? { en: s.gloss } : {}), ...(s.example ? { example: s.example } : {}), ...(i === best ? { best: true } : {}),
   }));
   out.unshift(...out.splice(best, 1)); // the meaning in this sentence first
   return { word, lemma: out[0].head || lemma, inContext: out[0].meaning, senses: out, source, ...(temporary ? { temporary: true } : {}) };
 }
 
-/** Validates the POST body: {word, lang, to, ctx}. */
+/** One word as it appears in text: letters (with accents), inner apostrophes and hyphens; no spaces or signs. */
+export const WORD_RE = /^[\p{L}\p{M}][\p{L}\p{M}\p{N}'’-]{0,39}$/u;
+
+/**
+ * Validates the POST body: { word, lang, to, ref, ctx? }. `ref` names where the word was seen ({v}, {libraryId} or
+ * {wordId}, see sources.mjs); `ctx`, the sentence on screen, is only used when it is found there.
+ */
 export function parseDefineRequest(raw) {
   let b;
   try { b = JSON.parse(raw); } catch { throw new ApiError(400, 'bad-request'); }
   const word = String(b?.word ?? '').trim(), lang = String(b?.lang ?? '').toLowerCase(), to = String(b?.to ?? '').toLowerCase();
-  if (!word || word.length > 60 || /[\n<>]/.test(word)) throw new ApiError(400, 'bad-request');
+  if (!WORD_RE.test(word)) throw new ApiError(400, 'bad-request');
   if (!LANG_RE.test(lang) || !LANG_RE.test(to) || lang === to) throw new ApiError(400, 'bad-request');
-  return { word, lang, to, ctx: String(b?.ctx ?? '').slice(0, 500) };
+  return { word, lang, to, ref: parseRef(b?.ref), ctx: norm(String(b?.ctx ?? '').slice(0, 600)) };
 }
 
 /** POST /api/define handler. Results are cached on disk per word, language, sentence and model. */
@@ -228,18 +239,25 @@ export function fromDictionary(entry, word, to) {
  * the sense for the sentence (no Tinker): then every word with an entry is answered from it. With Tinker, only
  * words with a single meaning are (the sentence cannot change their meaning).
  */
-export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl, dictionary = null, dictionaryFirst = () => false } = {}) {
+export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl, dictionary = null, dictionaryFirst = () => false, sources } = {}) {
   const cache = diskCache(cacheDir);
-  return (req, res) => llmContext.run({}, () => defineRoute(req, res));
-  async function defineRoute(req, res) {
-    const q = parseDefineRequest(await readBody(req, 20_000));
+  return (req, res, ip, user) => llmContext.run({}, () => defineRoute(req, res, user));
+  async function defineRoute(req, res, user) {
+    if (!sources) throw new ApiError(404, 'not-found-route');
+    const q = parseDefineRequest(await readBody(req, 4_000));
+    // The sentence goes to the model only when it really is in the named source and holds the word.
+    if (q.ref.wordId) q.ctx = (await sources.savedWord(user, q.ref.wordId)).ctx;
+    else if (q.ctx && !(await sources.contains(q.ref, user, q.ctx))) q.ctx = '';
+    if (q.ctx && !q.ctx.toLocaleLowerCase(q.lang).includes(q.word.toLocaleLowerCase(q.lang))) q.ctx = '';
+    // A user's own text is not mixed into the shared cache.
+    const own = q.ctx && !q.ref.v ? `u${user?.id ?? 0}` : '';
     const entry = dictionary ? dictionary(q.lang, q.word.toLocaleLowerCase(q.lang)) : null;
     const quick = entry && (dictionaryFirst() || (entry[q.to]?.length === 1)) ? fromDictionary(entry, q.word, q.to) : null;
     if (quick) {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       return res.end(JSON.stringify(quick));
     }
-    const key = createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
+    const key = (own ? `${own}-` : '') + createHash('sha256').update(JSON.stringify(['v3', llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : []), q.word, q.lang, q.to, q.ctx])).digest('hex').slice(0, 32);
     let out = await cache.get(key);
     if (!out) {
       const ctl = new AbortController();

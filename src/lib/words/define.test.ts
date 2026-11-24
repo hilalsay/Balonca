@@ -4,7 +4,7 @@ import { parseBackup } from '../storage/backup';
 
 const reply = (status: number, body: unknown): typeof fetch =>
   (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
-const ask = (f: typeof fetch) => defineWord({ word: 'graaf', lang: 'nl', to: 'tr', ctx: 'Ik graaf.', fetchImpl: f });
+const ask = (f: typeof fetch) => defineWord({ word: 'graaf', lang: 'nl', to: 'tr', ctx: 'Ik graaf.', ref: { v: 'abcdefghijk' }, fetchImpl: f });
 
 describe('defineWord', () => {
   it('returns the meaning with a timestamp', async () => {

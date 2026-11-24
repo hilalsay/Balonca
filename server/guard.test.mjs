@@ -59,26 +59,27 @@ describe('only the site itself may use the API', () => {
 
 describe('speech limits and headers', () => {
   const info = async () => ({ parse: [], tts: ['nl'] });
+  const anyText = { contains: async () => true }; // every sentence counts as part of the text here
   const worker = { call: async (m) => { await writeFile(m.out, 'RIFFdata'); return { ok: true }; } };
   const ask = async (h, text, ip = '203.0.113.4') => {
     const out = { status: 0, headers: {}, body: '' };
     const res = { writeHead: (s, hd) => { out.status = s; out.headers = hd; }, end: () => {}, on() {}, once() {}, emit() {}, write() { return true; } };
     const { PassThrough } = await import('node:stream');
     const sink = new PassThrough(); Object.assign(sink, res); sink.resume();
-    try { await h({ headers: {}, method: 'GET' }, sink, new URL(`http://x/api/tts?lang=nl&text=${encodeURIComponent(text)}`), ip); }
+    try { await h({ headers: {}, method: 'GET' }, sink, new URL(`http://x/api/tts?lang=nl&lib=doc1&text=${encodeURIComponent(text)}`), ip); }
     catch (e) { out.status = e.status; out.code = e.code; }
     return out;
   };
 
   it('keeps audio private and out of search engines', async () => {
-    const h = createTtsHandler({ worker, info, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')) });
+    const h = createTtsHandler({ worker, info, sources: anyText, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')) });
     const r = await ask(h, 'Hallo daar');
     expect(r.headers['cache-control']).toBe('private, max-age=86400');
     expect(r.headers['cache-control']).not.toMatch(/public|immutable/);
     expect(r.headers['x-robots-tag']).toBe('noindex');
   });
   it('limits new speech but not audio already made', async () => {
-    const h = createTtsHandler({ worker, info, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')), limits: { newPer10Min: 2 } });
+    const h = createTtsHandler({ worker, info, sources: anyText, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')), limits: { newPer10Min: 2 } });
     expect((await ask(h, 'Een')).status).toBe(200);
     expect((await ask(h, 'Twee')).status).toBe(200);
     expect((await ask(h, 'Drie')).status).toBe(429);
@@ -86,7 +87,7 @@ describe('speech limits and headers', () => {
     expect((await ask(h, 'Drie', '203.0.113.8')).status).toBe(200); // another client
   });
   it('limits characters per day', async () => {
-    const h = createTtsHandler({ worker, info, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')), limits: { charsPerDay: 12 } });
+    const h = createTtsHandler({ worker, info, sources: anyText, cacheDir: await mkdtemp(path.join(tmpdir(), 'tts-')), limits: { charsPerDay: 12 } });
     expect((await ask(h, 'Hallo daar')).status).toBe(200);
     expect((await ask(h, 'Nog een zin')).status).toBe(429);
   });

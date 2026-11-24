@@ -114,8 +114,26 @@ per video and no text leaves your server. When a video opens with no subtitles, 
 2. for every language under **Settings → Automatic subtitles** (default Turkish and English; the video's own language
    is skipped) uses a hand-made YouTube subtitle if there is one, otherwise translates with the local model.
 
-`POST /api/translate` with `{from, to, cues:[{start,end,text}]}` answers with NDJSON events
-(`meta`, `queued`, `cues`, `ping`, `done` / `error`). How it keeps small models accurate:
+`POST /api/translate` with `{v, code, kind, to}` (a YouTube subtitle) or `{libraryId, to}` (a text of the signed-in
+user's library) answers with NDJSON events (`meta`, `queued`, `pivot`, `cues`, `ping`, `done` / `error`).
+
+**The browser never sends text to a model** (nor to the voice or the grammar parser). Every request names a source
+and the server reads the text itself (`server/sources.mjs`): the video's subtitle through the YouTube cache, a text
+or a saved word from the user's account. Where the browser names a sentence (the one on screen, the one read aloud),
+it must occur in that source, or the request is refused (`not-in-source`). Model answers that are far longer than
+their source, or bring links, e-mail addresses or markup it did not have, are dropped (`server/llm/guard.mjs`), and
+the app never inserts raw HTML (a test checks). Translations of videos are shared; a user's own texts are cached
+under that user only. With `PIVOT=en`, Turkish is made from the English translation on the server.
+
+| Request | Source |
+|---|---|
+| `POST /api/translate` | `{v, code, kind, to}` or `{libraryId, to}` |
+| `POST /api/sentence` | `{wordId, to}` or `{libraryId, text, to}` (`text` must be in the text) |
+| `POST /api/define` | `{word, lang, to, ref, ctx?}`, `ref` = `{v}`, `{libraryId}` or `{wordId}`; `ctx` used only when found there |
+| `GET /api/tts` | `?lang&word=` (one word), `?lang&lib=&text=` (a sentence of a text), `?lang&wordId=` |
+| `POST /api/parse` | `{lang, ref:{libraryId}, sents}` (every sentence must be in the text) |
+
+How translation keeps small models accurate:
 - **Sentences, not lines.** Subtitle lines are cut mid-sentence ("Ik graaf naar een verborgen" / "schat."), which makes
   small models shift words between lines. Lines are joined and re-split into sentences, each with a time span
   interpolated from its words; the translated track has one cue per sentence.
@@ -135,7 +153,7 @@ English output is good; Turkish is usable with occasional wrong words, and a lar
 improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translating.
 
 ## Word meanings
-`POST /api/define` with `{word, lang, to, ctx}` answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
+`POST /api/define` with `{word, lang, to, ref, ctx?}` (see the table above) answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.
 1. Senses come from [Wiktionary](https://en.wiktionary.org) (`/api/rest_v1/page/definition/<word>`): grammar lines such as
    "first-person singular present" are dropped, and "inflection of graven" is followed to *graven*.
 2. The local model only picks the sense used in the saved sentence (asked in English, the easiest task for a small

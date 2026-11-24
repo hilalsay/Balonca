@@ -24,7 +24,7 @@ export class GrammarError extends Error {
 const parsed = new Map<string, UdToken[]>();
 
 /** Parses sentences on the server (spaCy). Results are kept for this visit. */
-export async function parseSentences(lang: string, sents: string[], opts: { signal?: AbortSignal; fetchImpl?: typeof fetch } = {}): Promise<UdToken[][]> {
+export async function parseSentences(lang: string, sents: string[], opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; ref: { libraryId: string } }): Promise<UdToken[][]> {
   const key = (s: string) => `${lang}\n${s}`;
   const todo = [...new Set(sents.filter((s) => !parsed.has(key(s))))];
   if (todo.length) {
@@ -32,7 +32,7 @@ export async function parseSentences(lang: string, sents: string[], opts: { sign
     let res: Response;
     try {
       res = await doFetch(`${BASE}/parse`, {
-        method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lang, sents: todo }),
+        method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lang, ref: opts.ref, sents: todo }),
       });
     } catch {
       throw new GrammarError(opts.signal?.aborted ? 'cancelled' : 'unavailable');
@@ -47,6 +47,17 @@ export async function parseSentences(lang: string, sents: string[], opts: { sign
   return sents.map((s) => parsed.get(key(s)) ?? []);
 }
 
-/** Address of Balonca's own voice reading `text` (audio/wav, cached by the server and the browser). */
-export const ttsUrl = (lang: string, text: string) =>
-  `${BASE}/tts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(text.replace(/\s+/g, ' ').trim().slice(0, 600))}`;
+/**
+ * What Balonca's voice reads (phase 2: never free text): one word, a sentence of a library text (the server
+ * checks it is in the text), or the sentence a saved word came from.
+ */
+export type SpeechSource = { word: string } | { lib: string; text: string } | { wordId: string };
+
+/** Address of Balonca's own voice reading `src` (audio/wav, cached by the server and the browser). */
+export function ttsUrl(lang: string, src: SpeechSource): string {
+  const q = new URLSearchParams({ lang });
+  if ('word' in src) q.set('word', src.word);
+  else if ('wordId' in src) q.set('wordId', src.wordId);
+  else { q.set('lib', src.lib); q.set('text', src.text.replace(/\s+/g, ' ').trim().slice(0, 600)); }
+  return `${BASE}/tts?${q}`;
+}

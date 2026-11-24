@@ -1,10 +1,12 @@
 /**
- * Translations of a text, by Balonca's server (local model): one sentence (sentence panel) or all of them
- * (translation under every sentence). Turkish is made from the English translation, which the local model
- * writes much better than e.g. Dutch -> Turkish; the English one is kept too and shown alongside.
+ * Translations of a text, by Balonca's server: one sentence (sentence panel) or all of them (translation under
+ * every sentence). The server reads the text from the account (phase 2: no text is sent from here), so the text
+ * is synced first when the server does not have it yet. With the pivot on, Turkish is made from English on the
+ * server, and the English is kept too and shown alongside.
  */
 import { app } from '../state.svelte';
-import type { Cue, TextDoc } from '../types';
+import { sync } from '../sync.svelte';
+import type { TextDoc } from '../types';
 import { serverTranslate, serverConfig } from '../translate/server.svelte';
 import { TranslateError } from '../translate/runner';
 import { translateSentence, SentenceError } from '../words/sentence';
@@ -13,28 +15,19 @@ export const PIVOT = 'en';
 /** Languages translated via English. */
 export const viaEnglish = (from: string, to: string) => serverConfig.pivot === 'en' && to === 'tr' && from !== PIVOT;
 
-/** Every sentence gets its own time slot, far apart, so the server keeps them as separate units. */
-const SLOT = 10;
-export const toCues = (sents: string[]): Cue[] => sents.map((text, i) => ({ start: i * SLOT, end: i * SLOT + 5, text }));
-export const slotOf = (c: Cue) => Math.floor(c.start / SLOT + 1e-6);
+const flush = () => sync.flush();
+/** Sentences compare equal however they are spaced (the server compares the same way). */
+export const same = (a: string, b: string) => a.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufeff]/g, '').replace(/\s+/g, ' ').trim()
+  === b.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufeff]/g, '').replace(/\s+/g, ' ').trim();
 
 /** One sentence of a text in `to` (stored with the text). Returns it, plus the English made on the way. */
 export async function translateOne(doc: TextDoc, i: number, text: string, to: string, signal?: AbortSignal): Promise<{ text: string; en?: string }> {
   const have = doc.trans?.[to]?.[i];
   if (have) return { text: have, en: doc.trans?.[PIVOT]?.[i] ?? undefined };
-  if (viaEnglish(doc.lang, to)) {
-    let en = doc.trans?.[PIVOT]?.[i] ?? null;
-    if (!en) {
-      en = await translateSentence({ text, from: doc.lang, to: PIVOT, signal });
-      app.setTextTrans(doc.id, PIVOT, i, en);
-    }
-    const out = await translateSentence({ text: en, from: PIVOT, to, signal });
-    app.setTextTrans(doc.id, to, i, out);
-    return { text: out, en };
-  }
-  const out = await translateSentence({ text, from: doc.lang, to, signal });
-  app.setTextTrans(doc.id, to, i, out);
-  return { text: out };
+  const out = await translateSentence({ source: { libraryId: doc.id, text }, to, signal, flush });
+  if (out.en && to !== PIVOT) app.setTextTrans(doc.id, PIVOT, i, out.en);
+  app.setTextTrans(doc.id, to, i, out.text);
+  return out;
 }
 
 export interface TextJob { id: string; lang: string; done: number; total: number; queued: number; step: 'pivot' | 'final'; error?: string }
@@ -58,17 +51,16 @@ class TextTranslator {
     this.cancel();
     if (!this.missing(doc, to, sents.length)) return;
     const ctl = (this.ctl = new AbortController());
-    const job: TextJob = { id: doc.id, lang: to, done: 0, total: sents.length, queued: 0, step: 'final' };
+    const job: TextJob = { id: doc.id, lang: to, done: 0, total: sents.length, queued: 0, step: viaEnglish(doc.lang, to) ? 'pivot' : 'final' };
     this.job = job;
     try {
-      let from = doc.lang, src = sents;
-      if (viaEnglish(doc.lang, to)) {
-        if (this.missing(doc, PIVOT, sents.length)) { this.job.step = 'pivot'; await this.all(doc, sents, doc.lang, PIVOT, ctl.signal); }
-        const en = doc.trans?.[PIVOT] ?? [];
-        if (sents.every((_, i) => en[i])) { from = PIVOT; src = sents.map((_, i) => en[i]!); }
-        if (this.job) { this.job.step = 'final'; this.job.done = 0; }
+      try { await this.all(doc, sents, to, ctl.signal); }
+      catch (e) {
+        // A text added a moment ago may not be on the account yet: sync, then once more.
+        if (!(e instanceof TranslateError && e.code === 'unavailable')) throw e;
+        await flush();
+        await this.all(doc, sents, to, ctl.signal);
       }
-      await this.all(doc, src, from, to, ctl.signal);
       if (this.ctl === ctl) this.job = null;
     } catch (e) {
       if (ctl.signal.aborted || (e instanceof TranslateError && e.code === 'cancelled')) return;
@@ -78,22 +70,21 @@ class TextTranslator {
     }
   }
 
-  /** Sends only what is missing; the server streams sentences back in order. */
-  private async all(doc: TextDoc, src: string[], from: string, to: string, signal: AbortSignal) {
-    const have = doc.trans?.[to] ?? [];
-    const todo = src.map((text, i) => ({ text, i })).filter((x) => !have[x.i] && x.text.trim());
-    if (!todo.length) return;
-    const acc = new Map<number, string>();
+  /** The server translates the whole text it has; each answer names its sentence (number and text). */
+  private async all(doc: TextDoc, sents: string[], to: string, signal: AbortSignal) {
+    // The server numbers sentences as this device does; should the two ever differ, the text decides.
+    const byText = new Map<string, number>();
+    sents.forEach((s, i) => { const k = s.replace(/\s+/g, ' ').trim(); if (!byText.has(k)) byText.set(k, i); });
     await serverTranslate({
-      cues: todo.map((x) => ({ start: x.i * SLOT, end: x.i * SLOT + 5, text: x.text })), from, to, signal,
+      source: { libraryId: doc.id }, to, signal,
       onQueued: (ahead) => { if (this.job) this.job.queued = ahead; },
-      onCues: (cues, done) => {
+      onPivot: (done, total) => { if (this.job) { this.job.queued = 0; this.job.step = 'pivot'; this.job.done = done; this.job.total = total; } },
+      onCues: (cues, done, total) => {
         for (const c of cues) {
-          const i = slotOf(c);
-          acc.set(i, acc.has(i) ? `${acc.get(i)} ${c.text}` : c.text);
-          app.setTextTrans(doc.id, to, i, acc.get(i)!);
+          const i = typeof c.i === 'number' && sents[c.i] !== undefined && same(sents[c.i], c.src ?? '') ? c.i : byText.get((c.src ?? '').replace(/\s+/g, ' ').trim());
+          if (i !== undefined && c.text) app.setTextTrans(doc.id, to, i, c.text);
         }
-        if (this.job) { this.job.queued = 0; this.job.done = done; this.job.total = todo.length; }
+        if (this.job) { this.job.queued = 0; this.job.step = 'final'; this.job.done = done; this.job.total = total; }
       },
     });
   }

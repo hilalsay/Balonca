@@ -94,6 +94,7 @@ function repo(db) {
     // sync
     wordsSince: q('SELECT id, lang, data, updated_at, deleted FROM words WHERE user_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 20000'),
     word: q('SELECT updated_at FROM words WHERE user_id = ? AND id = ?'),
+    wordData: q('SELECT data FROM words WHERE user_id = ? AND id = ? AND deleted = 0'),
     putWord: q(`INSERT INTO words (user_id, id, lang, data, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (user_id, id) DO UPDATE SET lang = excluded.lang, data = excluded.data, updated_at = excluded.updated_at, deleted = excluded.deleted
       WHERE excluded.updated_at > words.updated_at`),
@@ -146,6 +147,8 @@ function repo(db) {
     useReset: (hash, now) => s.useReset.run(now, hash).changes === 1,
     wordsSince: (u, t) => s.wordsSince.all(u, t),
     putWord: (u, w) => s.putWord.run(u, w.id, w.lang, w.data, w.updatedAt, w.deleted ? 1 : 0),
+    /** One saved word of a user (the SavedWord the browser synced), or null. */
+    savedWord: (u, id) => { const r = s.wordData.get(u, id); try { return r ? JSON.parse(r.data) : null; } catch { return null; } },
     countWords: (u) => s.countWords.get(u).n,
     knownSince: (u, t) => s.knownSince.all(u, t),
     putKnown: (u, k) => s.putKnown.run(u, k.lang, k.w, k.updatedAt, k.deleted ? 1 : 0),

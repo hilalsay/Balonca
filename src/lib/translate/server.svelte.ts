@@ -8,7 +8,8 @@ export const SERVER_TRANSLATE_ENABLED = BASE !== 'off';
 export type ServerEvent =
   | { type: 'meta'; total: number; model: string; cached: number }
   | { type: 'queued'; ahead: number }
-  | { type: 'cues'; done: number; cues: Cue[] }
+  | { type: 'cues'; done: number; cues: (Cue & { i?: number; src?: string })[] }
+  | { type: 'pivot'; done: number; total: number }
   | { type: 'ping' }
   | { type: 'done' }
   | { type: 'error'; error: string };
@@ -16,8 +17,14 @@ export type ServerEvent =
 const CODES: Record<string, TranslateError['code']> = {
   'rate-limit': 'rate-limit', busy: 'busy', cancelled: 'cancelled', 'bad-request': 'bad-response',
   'llm-unreachable': 'unavailable', 'llm-model-missing': 'unavailable', 'llm-failed': 'api', 'llm-bad-response': 'bad-response',
-  timeout: 'api',
+  timeout: 'api', 'no-subs': 'unavailable', 'not-in-library': 'unavailable', 'login-required': 'unavailable',
 };
+
+/**
+ * What the server translates (it reads the text itself, phase 2): a YouTube subtitle, or a text of the user's
+ * library (synced to the account first).
+ */
+export type TranslateSource = { v: string; code: string; kind: 'auto' | 'manual' } | { libraryId: string };
 
 /**
  * A translated line that holds pieces of the model's JSON (`It's just a ditch.”, “2”:”What…`). Older server
@@ -49,14 +56,17 @@ export async function* readEvents(body: ReadableStream<Uint8Array>): AsyncGenera
 }
 
 /**
- * Translates a track with Balonca's own server (local Ollama model). The server regroups subtitle lines into
- * sentences, so the result has its own timings (one cue per sentence). `onCues` receives them in order as they
- * are translated; the returned promise resolves with all of them.
+ * Translates a YouTube subtitle or a library text with Balonca's own server. For a video the server regroups
+ * subtitle lines into sentences, so the result has its own timings (one cue per sentence); for a text every cue
+ * carries the sentence it translates (`i`, `src`). `onCues` receives them in order as they are translated; the
+ * returned promise resolves with all of them.
  */
 export async function serverTranslate(opts: {
-  cues: Cue[]; from: string; to: string; signal: AbortSignal;
-  onCues?: (cues: Cue[], done: number, total: number) => void;
+  source: TranslateSource; to: string; signal: AbortSignal;
+  onCues?: (cues: (Cue & { i?: number; src?: string })[], done: number, total: number) => void;
   onQueued?: (ahead: number) => void;
+  /** Progress of the English made first (Turkish via English). */
+  onPivot?: (done: number, total: number) => void;
   fetchImpl?: typeof fetch;
 }): Promise<Cue[]> {
   const doFetch = opts.fetchImpl ?? fetch.bind(globalThis);
@@ -64,7 +74,7 @@ export async function serverTranslate(opts: {
   try {
     res = await doFetch(`${BASE}/translate`, {
       method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from: opts.from, to: opts.to, cues: opts.cues.map(({ start, end, text }) => ({ start, end, text })) }),
+      body: JSON.stringify({ ...opts.source, to: opts.to }),
     });
   } catch {
     throw new TranslateError(opts.signal.aborted ? 'cancelled' : 'network');
@@ -73,12 +83,13 @@ export async function serverTranslate(opts: {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new TranslateError(body?.error ? (CODES[body.error] ?? 'api') : 'unavailable');
   }
-  const all: Cue[] = [];
+  const all: (Cue & { i?: number; src?: string })[] = [];
   let total = 0, finished = false;
   try {
     for await (const ev of readEvents(res.body)) {
       if (ev.type === 'meta') total = ev.total;
       else if (ev.type === 'queued') opts.onQueued?.(ev.ahead);
+      else if (ev.type === 'pivot') opts.onPivot?.(ev.done, ev.total);
       else if (ev.type === 'cues') { all.push(...ev.cues); opts.onCues?.(ev.cues, ev.done, total); }
       else if (ev.type === 'error') throw new TranslateError(CODES[ev.error] ?? 'api', ev.error);
       else if (ev.type === 'done') finished = true;
