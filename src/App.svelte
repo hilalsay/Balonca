@@ -16,6 +16,11 @@
   import { app } from './lib/state.svelte';
   import { t } from './lib/i18n/index.svelte';
   import type { Component } from 'svelte';
+  import { startHeartbeat } from './lib/events';
+  import { player } from './lib/player/controller.svelte';
+
+  // Active minutes for the admin panel (only while signed in).
+  $effect(() => { if (account.status === 'in') return startHeartbeat(() => player.playing); });
 
   // Heavy pages are separate chunks, fetched only when first visited.
   const lazy = {
@@ -24,6 +29,7 @@
     settings: () => import('./routes/Settings.svelte'),
     words: () => import('./routes/Words.svelte'),
     help: () => import('./routes/Help.svelte'),
+    admin: () => import('./routes/Admin.svelte'),
   } as const;
 
   const loaded = $state<Record<string, Component | undefined>>({});

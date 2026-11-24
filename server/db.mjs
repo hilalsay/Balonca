@@ -119,6 +119,20 @@ function repo(db) {
       WHERE excluded.updated_at > library.updated_at`),
     libraryItem: q('SELECT * FROM library WHERE user_id = ? AND id = ? AND deleted = 0'),
     insertEvent: q('INSERT INTO events (user_id, type, at, meta) VALUES (?, ?, ?, ?)'),
+    // measurements and the admin panel (phase 5)
+    pruneEvents: q('DELETE FROM events WHERE at < ?'),
+    activeSince: q('SELECT COUNT(DISTINCT user_id) n FROM events WHERE at >= ? AND user_id IS NOT NULL'),
+    newUsersSince: q('SELECT COUNT(*) n FROM users WHERE created_at >= ?'),
+    perDay: q(`SELECT CAST((at - ?) / 86400000 AS INTEGER) d, COUNT(DISTINCT user_id) users, SUM(type = 'heartbeat') minutes
+      FROM events WHERE at >= ? GROUP BY d ORDER BY d`),
+    eventTypes: q('SELECT type, COUNT(*) n FROM events WHERE at >= ? GROUP BY type ORDER BY n DESC'),
+    adminUsers: q(`SELECT u.id, u.email, u.is_admin, u.disabled, u.created_at, u.last_seen_at, u.google_sub IS NOT NULL google,
+        (SELECT COUNT(*) FROM words w WHERE w.user_id = u.id AND w.deleted = 0) words,
+        (SELECT COUNT(*) FROM library l WHERE l.user_id = u.id AND l.deleted = 0 AND l.kind = 'text') texts,
+        (SELECT COUNT(*) FROM library l WHERE l.user_id = u.id AND l.deleted = 0 AND l.kind = 'youtube') videos,
+        (SELECT COUNT(*) FROM events e WHERE e.user_id = u.id AND e.type = 'heartbeat' AND e.at >= ?) minutes
+      FROM users u ORDER BY u.created_at`),
+    userEventTypes: q('SELECT type, COUNT(*) n, MAX(at) last FROM events WHERE user_id = ? AND at >= ? GROUP BY type ORDER BY n DESC'),
     dictGet: q('SELECT lemma, data, source FROM dictionary WHERE lang = ? AND form = ?'),
     dictPut: q(`INSERT INTO dictionary (lang, form, lemma, data, source, created_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (lang, form) DO UPDATE SET lemma = excluded.lemma, data = excluded.data, source = excluded.source, created_at = excluded.created_at`),
@@ -170,6 +184,14 @@ function repo(db) {
     putDict: (lang, form, lemma, data, source, at) => s.dictPut.run(lang, form, lemma, JSON.stringify(data), source, at),
     hasDict: (lang, form) => !!s.dictHas.get(lang, form),
     dictCounts: () => Object.fromEntries(s.dictCount.all().map((r) => [r.lang, r.n])),
+    pruneEvents: (before) => s.pruneEvents.run(before).changes,
+    activeSince: (t) => s.activeSince.get(t).n,
+    newUsersSince: (t) => s.newUsersSince.get(t).n,
+    /** Per day from `from` (day 0 = the day starting at `from`): distinct active users and active minutes. */
+    perDay: (from) => s.perDay.all(from, from),
+    eventTypes: (t) => s.eventTypes.all(t),
+    adminUsers: (minutesSince) => s.adminUsers.all(minutesSince),
+    userEventTypes: (id, t) => s.userEventTypes.all(id, t),
     event: (userId, type, at, meta) => s.insertEvent.run(userId ?? null, type, at, meta ? JSON.stringify(meta) : null),
   };
 }

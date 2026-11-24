@@ -253,9 +253,9 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14,
   return {
     route, requireUser,
     /** A new invite code (128 random bits), valid for `inviteDays`. */
-    createInvite(byUserId = null) {
+    createInvite(byUserId = null, days = inviteDays) {
       const code = newToken(16);
-      db.createInvite(code, byUserId, now(), now() + inviteDays * 86_400_000);
+      db.createInvite(code, byUserId, now(), now() + days * 86_400_000);
       return code;
     },
     /** A one-time password reset token, valid for an hour (the admin hands the link over). */

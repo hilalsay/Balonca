@@ -18,6 +18,7 @@ import { openDb } from './db.mjs';
 import { createAuth } from './auth.mjs';
 import { createSync } from './sync.mjs';
 import { createSources } from './sources.mjs';
+import { createAdmin } from './admin.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -116,6 +117,7 @@ if (llmOn) translateHandler = createTranslateHandler({ ...named, cacheDir, chat,
 const handler = createHandler({
   auth: accounts,
   sync: accounts ? createSync({ db }) : null,
+  admin: accounts ? createAdmin({ db, auth: accounts, publicOrigin: env.PUBLIC_ORIGIN ?? '', llmStatus: () => llmLayer.status() }) : null,
   youtube,
   parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).

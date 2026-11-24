@@ -141,6 +141,7 @@ export function createHandler({
   ttlMs = 10 * 60_000, now = Date.now, translate = null, define = null, sentence = null, llmStatus = null,
   parse = null, tts = null, nlpStatus = null, publicOrigin = '', parsePerMinute = 60, youtube = null, appConfig = { pivot: 'en' },
   auth = null, sync = null, // accounts (auth.mjs, sync.mjs): with them, every route but health needs a signed-in user
+  admin = null, // measurements and the admin panel (admin.mjs)
 } = {}) {
   // All YouTube calls: cache, shared budget, circuit breaker (youtube.mjs). Without a cache dir: memory only.
   const yt = youtube ?? createYouTube({ run, limits: { gapMs: [0, 0] } });
@@ -173,6 +174,14 @@ export function createHandler({
         if (!user) throw new ApiError(401, 'login-required');
       }
       const ip = user ? `u${user.id}` : addr;
+      if (url.pathname === '/api/events') {
+        if (!admin || !user) throw new ApiError(404, 'not-found-route');
+        return await admin.events(req, res, user);
+      }
+      if (url.pathname.startsWith('/api/admin/')) {
+        if (!admin || !user) throw new ApiError(404, 'not-found-route');
+        return await admin.admin(req, res, url, user);
+      }
       if (url.pathname === '/api/sync') {
         if (!sync || !user) throw new ApiError(404, 'not-found-route');
         if (!limit(ip)) throw new ApiError(429, 'rate-limit');

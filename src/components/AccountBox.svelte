@@ -39,6 +39,7 @@
       <button onclick={() => sync.run()} disabled={sync.state === 'busy'}>{t('account.syncNow')}</button>
       <button onclick={() => (open = !open)} aria-expanded={open}>{t('account.changePw')}</button>
       <button onclick={() => account.logout()}>{t('account.logout')}</button>
+      {#if account.me.isAdmin}<a class="adm" href="#/admin">{t('account.admin')}</a>{/if}
     </div>
     {#if open}
       <form onsubmit={change}>
@@ -73,5 +74,6 @@
   .del summary { cursor: pointer; font-weight: 700; color: var(--danger); min-height: 44px; display: flex; align-items: center; }
   .danger { background: var(--danger); color: #fff; border: 0; }
   .danger:disabled { opacity: 0.5; }
+  .adm { min-height: 44px; display: inline-flex; align-items: center; font-weight: 700; padding: 0 8px; }
   .ok { color: var(--good); font-weight: 700; } .err { color: var(--danger); font-weight: 700; }
 </style>

@@ -11,6 +11,7 @@ import { schedule, LEARNED_DAYS, type Grade } from './srs/scheduler';
 import { setLocale } from './i18n/index.svelte';
 import { loadExample, exampleFileUrl } from './example';
 import { theme, applyTheme } from './theme.svelte';
+import { report } from './events';
 
 const debounce = <A extends unknown[]>(fn: (...a: A) => void, ms: number) => {
   let h: ReturnType<typeof setTimeout>;
@@ -117,6 +118,7 @@ class AppState {
     this.videos = [{ vid: id, openedAt: Date.now() }, ...this.videos.filter((v) => v.vid !== id)].slice(0, 500);
     if (this.db) void this.db.put('meta', $state.snapshot(this.videos), 'videos');
     this.mark('videos', id);
+    report('video_open');
     this.tracks = this.db ? await loadTracks(this.db, id) : [];
     if (this.db) await setLastVideo(this.db, id);
   }
@@ -201,6 +203,7 @@ class AppState {
     this.words = list;
     if (this.db) void (added ? putWord(this.db, $state.snapshot(w) as SavedWord) : deleteWord(this.db, w.id));
     this.mark('words', w.id, !added);
+    if (added) report('word_save', { lang: w.lang });
     return added;
   }
 
@@ -309,6 +312,7 @@ class AppState {
     const w = this.words.find((x) => x.id === id);
     if (!w) return;
     Object.assign(w, schedule(w, grade));
+    report('review', { grade });
     if (this.db) void putWord(this.db, $state.snapshot(w) as SavedWord);
     this.mark('words', w.id);
   }
@@ -370,6 +374,7 @@ class AppState {
 
   /** Opening a text moves it to the top of the list. */
   touchText(id: string) {
+    report('text_open');
     this.updateText(id, { opened: Date.now() });
     this.texts = sortTexts(this.texts);
   }

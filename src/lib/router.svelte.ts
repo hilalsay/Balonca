@@ -1,7 +1,7 @@
-export type Route = 'home' | 'watch' | 'read' | 'words' | 'help' | 'settings' | 'login' | 'invite' | 'reset' | 'notfound';
+export type Route = 'home' | 'watch' | 'read' | 'words' | 'help' | 'settings' | 'login' | 'invite' | 'reset' | 'admin' | 'notfound';
 // Address segment -> route. Sign-in pages have Turkish addresses because they are shared as links.
 const SEGMENTS: Record<string, Route> = {
-  home: 'home', watch: 'watch', read: 'read', words: 'words', help: 'help', ayarlar: 'settings', giris: 'login', davet: 'invite', sifre: 'reset',
+  home: 'home', watch: 'watch', read: 'read', words: 'words', help: 'help', ayarlar: 'settings', giris: 'login', davet: 'invite', sifre: 'reset', admin: 'admin',
 };
 /** Pages someone who is not signed in may see. */
 export const PUBLIC_ROUTES: Route[] = ['login', 'invite', 'reset'];

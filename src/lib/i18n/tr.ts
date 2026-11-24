@@ -623,6 +623,7 @@ export const tr = {
   'account.delete.confirm': 'Onaylamak için e-postanı yaz: {email}',
   'account.delete.go': 'Hesabımı kalıcı olarak sil',
   'auth.err.bad-confirm': 'Yazdığın e-posta hesabınınkiyle aynı değil.',
+  'account.admin': 'Yönetim paneli',
   'account.title': 'Hesabım',
   'account.signedIn': '{email} olarak giriş yaptın.',
   'account.logout': 'Çıkış yap',

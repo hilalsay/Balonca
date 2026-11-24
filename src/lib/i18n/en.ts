@@ -625,6 +625,7 @@ export const en: Record<MessageKey, string> = {
   'account.delete.confirm': 'Type your e-mail to confirm: {email}',
   'account.delete.go': 'Delete my account for good',
   'auth.err.bad-confirm': 'The e-mail you typed is not the account\'s.',
+  'account.admin': 'Admin panel',
   'account.title': 'My account',
   'account.signedIn': 'Signed in as {email}.',
   'account.logout': 'Sign out',
