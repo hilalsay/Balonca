@@ -46,6 +46,9 @@ const MIGRATIONS = [
   // 2: a dictionary made once (phase 3b): meanings of frequent word forms, so lookups need no model later
   `CREATE TABLE dictionary (lang TEXT NOT NULL, form TEXT NOT NULL, lemma TEXT, data TEXT NOT NULL, source TEXT NOT NULL,
      created_at INTEGER NOT NULL, PRIMARY KEY (lang, form));`,
+  // 3: sign in with Google (the account's stable Google id; an account may have both a password and Google)
+  `ALTER TABLE users ADD COLUMN google_sub TEXT;
+   CREATE UNIQUE INDEX users_google_sub ON users(google_sub);`,
 ];
 
 /** Opens (and creates or upgrades) the database. ':memory:' for tests. */
@@ -69,6 +72,8 @@ function repo(db) {
   const s = {
     userByEmail: q('SELECT * FROM users WHERE email = ?'),
     userById: q('SELECT * FROM users WHERE id = ?'),
+    userByGoogle: q('SELECT * FROM users WHERE google_sub = ?'),
+    setGoogle: q('UPDATE users SET google_sub = ? WHERE id = ?'),
     insertUser: q('INSERT INTO users (email, pass_hash, display_name, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'),
     setPass: q('UPDATE users SET pass_hash = ? WHERE id = ?'),
     setDisabled: q('UPDATE users SET disabled = ? WHERE id = ?'),
@@ -119,6 +124,8 @@ function repo(db) {
     tx,
     userByEmail: (email) => s.userByEmail.get(email) ?? null,
     userById: (id) => s.userById.get(id) ?? null,
+    userByGoogle: (sub) => s.userByGoogle.get(sub) ?? null,
+    setGoogle: (id, sub) => s.setGoogle.run(sub, id),
     countUsers: () => s.countUsers.get().n,
     createUser: ({ email, passHash, displayName = null, isAdmin = false, now }) =>
       Number(s.insertUser.run(email, passHash, displayName, isAdmin ? 1 : 0, now).lastInsertRowid),

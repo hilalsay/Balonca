@@ -130,3 +130,86 @@ describe('sync', () => {
     expect(cleanWord({ id: 'nl:x', lang: 'nl', updatedAt: 1e15 }, 10).updatedAt).toBe(60_010); // no far-future stamps
   });
 });
+
+describe('sign in with Google', () => {
+  const google = { clientId: 'cid.apps.googleusercontent.com', clientSecret: 'test-secret', redirectUri: 'https://balonca.example.com/api/auth/google/callback' };
+  function setup() {
+    const db = openDb(':memory:');
+    let claims = {};
+    const calls = [];
+    const fetchImpl = async (u, init) => {
+      calls.push({ u, body: String(init.body) });
+      const part = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      return new Response(JSON.stringify({ id_token: `${part({ alg: 'RS256' })}.${part(claims)}.sig` }), { status: 200 });
+    };
+    const auth = createAuth({ db, secure: false, google, fetchImpl });
+    const srv = http.createServer(createHandler({ auth, ratePerMinute: 1000, run: async () => ({ stdout: '{}' }) }));
+    const ready = new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const get = async (path, headers = {}) => {
+      await ready;
+      const r = await fetch(`http://127.0.0.1:${srv.address().port}${path}`, { redirect: 'manual', headers });
+      return { status: r.status, location: r.headers.get('location'), cookies: r.headers.getSetCookie(), body: await r.text() };
+    };
+    /** start (from the site) -> Google -> callback with the given claims; returns the callback answer. */
+    const signIn = async (who, { invite = '', cookie = true, state: forceState } = {}) => {
+      const start = await get(`/api/auth/google/start${invite ? `?invite=${invite}` : ''}`, { 'sec-fetch-site': 'same-origin' });
+      expect(start.status).toBe(302);
+      const to = new URL(start.location);
+      expect(to.origin).toBe('https://accounts.google.com');
+      expect(to.searchParams.get('redirect_uri')).toBe(google.redirectUri);
+      const state = forceState ?? to.searchParams.get('state');
+      claims = { iss: 'https://accounts.google.com', aud: google.clientId, exp: Date.now() / 1000 + 300, nonce: to.searchParams.get('nonce'), email_verified: true, ...who };
+      const g = start.cookies[0].split(';')[0];
+      return get(`/api/auth/google/callback?state=${state}&code=abc`, { 'sec-fetch-site': 'cross-site', ...(cookie ? { cookie: g } : {}) });
+    };
+    const sid = (r) => r.cookies.find((c) => c.startsWith('balonca_sid=') && !c.startsWith('balonca_sid=;'));
+    return { db, auth, signIn, get, calls, sid, close: () => srv.close() };
+  }
+
+  it('says Google is there when signed out', async () => {
+    const s = setup();
+    const r = await s.get('/api/me', { 'sec-fetch-site': 'same-origin' });
+    expect(r.status).toBe(401);
+    expect(JSON.parse(r.body)).toEqual({ error: 'login-required', google: true });
+    s.close();
+  });
+
+  it('needs an invite for a new person, then signs them in with one tap', async () => {
+    const s = setup();
+    const no = await s.signIn({ sub: '111', email: 'yeni@example.com' });
+    expect(no.location).toBe('/#/giris?hata=need-invite');
+    expect(s.sid(no)).toBeUndefined();
+    const code = s.auth.createInvite();
+    const yes = await s.signIn({ sub: '111', email: 'yeni@example.com' }, { invite: code });
+    expect(yes.location).toBe('/#/');
+    expect(s.sid(yes)).toMatch(/HttpOnly; SameSite=Lax/);
+    expect(s.db.invite(code).used_by).toBe(s.db.userByEmail('yeni@example.com').id);
+    expect(s.calls[1].body).toContain('client_secret=test-secret');
+    // later: no invite needed, even if the e-mail changed at Google
+    expect(s.sid(await s.signIn({ sub: '111', email: 'baska@example.com' }))).toBeTruthy();
+    s.close();
+  });
+
+  it('adds Google to an existing account with the same verified e-mail', async () => {
+    const s = setup();
+    const id = s.db.createUser({ email: 'ayse@example.com', passHash: 'x', now: 1 });
+    expect(s.sid(await s.signIn({ sub: '222', email: 'AYSE@example.com' }))).toBeTruthy();
+    expect(s.db.userById(id).google_sub).toBe('222');
+    // an unverified e-mail is not enough
+    s.db.createUser({ email: 'mehmet@example.com', passHash: 'x', now: 1 });
+    expect((await s.signIn({ sub: '333', email: 'mehmet@example.com', email_verified: false })).location).toBe('/#/giris?hata=google-failed');
+    s.close();
+  });
+
+  it('refuses a callback without the state cookie, a wrong nonce or audience, and cross-site starts', async () => {
+    const s = setup();
+    const code = s.auth.createInvite();
+    expect((await s.signIn({ sub: '1', email: 'a@example.com' }, { invite: code, cookie: false })).location).toBe('/#/giris?hata=google-failed');
+    expect((await s.signIn({ sub: '1', email: 'a@example.com', nonce: 'other' }, { invite: code })).location).toBe('/#/giris?hata=google-failed');
+    expect((await s.signIn({ sub: '1', email: 'a@example.com', aud: 'someone-else' }, { invite: code })).location).toBe('/#/giris?hata=google-failed');
+    expect((await s.signIn({ sub: '1', email: 'a@example.com', exp: 1 }, { invite: code })).location).toBe('/#/giris?hata=google-failed');
+    expect((await s.get('/api/auth/google/start', { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+    expect(s.db.invite(code).used_by).toBeNull();
+    s.close();
+  });
+});

@@ -160,7 +160,9 @@ export function createHandler({
     try {
       if (req.method === 'OPTIONS') return send(204, '');
       const url = new URL(req.url ?? '/', 'http://x');
-      if (url.pathname !== '/api/health') checkSource(req, { publicOrigin, allowedOrigins });
+      // Google sends the browser back to the callback from its own site; that request is tied to this browser by the
+      // state cookie instead (auth.mjs).
+      if (url.pathname !== '/api/health' && url.pathname !== '/api/auth/google/callback') checkSource(req, { publicOrigin, allowedOrigins });
       const addr = (trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
       // Signed in: limits count per user (a school or dorm network shares one address), else per address.
       let user = null;

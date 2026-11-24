@@ -2,21 +2,27 @@
  * The signed-in account. The server says whether accounts are on: /api/me answers 200 (signed in),
  * 401 (accounts on, signed out) or 404 (no accounts: the app works locally as before).
  */
-const BASE = (import.meta.env.VITE_SUBS_API as string | undefined) ?? '/api';
+export const BASE = (import.meta.env.VITE_SUBS_API as string | undefined) ?? '/api';
 
 export interface Me { email: string; displayName: string | null; isAdmin: boolean }
 export type AccountStatus = 'unknown' | 'off' | 'out' | 'in';
-export type AuthError = 'bad-login' | 'bad-email' | 'short-password' | 'bad-invite' | 'email-taken' | 'bad-reset' | 'rate-limit' | 'network' | 'failed';
+export type AuthError = 'bad-login' | 'bad-email' | 'short-password' | 'bad-invite' | 'email-taken' | 'bad-reset' | 'rate-limit' | 'network' | 'failed'
+  | 'need-invite' | 'google-failed' | 'google-cancelled'; // the last three come back from Google in the address (?hata=)
 
 class Account {
   status = $state<AccountStatus>('unknown');
   me = $state<Me | null>(null);
+  /** The server offers "Continue with Google". */
+  google = $state(false);
 
   async check() {
     try {
       const r = await fetch(`${BASE}/me`, { headers: { accept: 'application/json' } });
       if (r.ok) { this.me = await r.json(); this.status = 'in'; }
-      else if (r.status === 401) { this.me = null; this.status = 'out'; }
+      else if (r.status === 401) {
+        this.google = !!((await r.json().catch(() => null)) as { google?: boolean } | null)?.google;
+        this.me = null; this.status = 'out';
+      }
       else this.status = 'off'; // no account service (or not reachable): the app works on this device only
     } catch { this.status = 'off'; }
     return this.status;
