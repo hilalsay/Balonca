@@ -347,8 +347,15 @@ export function readBody(req, max = LIMITS.maxBody) {
   return new Promise((resolve, reject) => {
     let size = 0, data = '';
     req.setEncoding('utf8');
-    req.on('data', (d) => { size += Buffer.byteLength(d); if (size > max) { reject(new ApiError(413, 'too-large')); req.destroy(); } else data += d; });
-    req.on('end', () => resolve(data));
+    // Too large: answer 413 and read (without keeping) the rest, so the client gets the answer instead of a reset;
+    // a sender that goes on far beyond the limit is cut off.
+    req.on('data', (d) => {
+      size += Buffer.byteLength(d);
+      if (size <= max) { data += d; return; }
+      if (data !== null) { data = null; reject(new ApiError(413, 'too-large')); }
+      if (size > max * 8 + 1_000_000) req.destroy();
+    });
+    req.on('end', () => { if (data !== null) resolve(data); });
     req.on('error', reject);
   });
 }

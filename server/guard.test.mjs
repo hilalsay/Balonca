@@ -118,3 +118,17 @@ describe('redact', () => {
     expect(redact('x'.repeat(600)).length).toBeLessThan(510);
   });
 });
+
+describe('oversized bodies', () => {
+  it('answer 413 instead of cutting the connection', async () => {
+    const { readBody } = await import('./translate.mjs');
+    const server = http.createServer(async (req, res) => {
+      try { await readBody(req, 1000); res.end('ok'); } catch (e) { res.writeHead(e.status ?? 500); res.end(JSON.stringify({ error: e.code })); }
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/`, { method: 'POST', body: 'x'.repeat(200_000) });
+    expect(r.status).toBe(413);
+    expect(await r.json()).toEqual({ error: 'too-large' });
+    await new Promise((r) => server.close(r));
+  });
+});
