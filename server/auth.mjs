@@ -2,6 +2,7 @@
 //   POST /api/auth/register {email, password, invite}   POST /api/auth/login {email, password}
 //   POST /api/auth/logout                                POST /api/auth/password {current, password}
 //   POST /api/auth/reset {token, password}               GET  /api/me
+//   GET  /api/auth/google/start[?invite=]  GET /api/auth/google/callback   (sign in with Google, see below)
 // Passwords: scrypt (N=2^15, r=8, p=1, 16-byte salt). Sessions: 32 random bytes, only their SHA-256 is stored.
 // Login answers the same for "no such user" and "wrong password".
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
@@ -48,8 +49,11 @@ export function parseCookies(header = '') {
  * db: the repository from db.mjs. secure: Secure cookie flag (off only for plain-HTTP tests).
  * Returns { route(req, res, url, client) -> handled?, requireUser(req) -> user | null, … }.
  */
-export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14 }) {
+export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14, google = null, fetchImpl = fetch }) {
   const loginTries = windowCounter(15 * 60_000, 10, now);
+  const googleStarts = windowCounter(15 * 60_000, 30, now);
+  /** state -> {nonce, invite, at}: sign-ins with Google on their way (10 minutes, in memory). */
+  const pending = new Map();
   const cookie = (token, maxAge) =>
     `${COOKIE}=${token}; HttpOnly;${secure ? ' Secure;' : ''} SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 
@@ -82,14 +86,93 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14 
   }
   const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : '');
 
+  // Sign in with Google (OpenID Connect, authorization code flow). The browser goes to Google and comes back to the
+  // callback with a code; the server swaps the code for Google's ID token over its own TLS connection, so the token
+  // needs no signature check (OpenID Connect Core, "ID Token Validation"). A random `state` in an HttpOnly cookie ties the return to the browser
+  // that left, a `nonce` ties the token to it. A known Google account signs in; an account with the same (verified)
+  // e-mail gets Google added; anyone else needs an invite code, as with a password.
+  const G_COOKIE = 'balonca_g';
+  const redirect = (res, to, extra = []) => {
+    const had = res.getHeader('set-cookie'); // the session cookie, when one was started
+    res.writeHead(302, { location: to, 'cache-control': 'no-store', 'set-cookie': [...(had ? [had].flat() : []), ...extra] });
+    res.end();
+  };
+  const back = (res, error) => redirect(res, error ? `/#/giris?hata=${error}` : '/#/', [`${G_COOKIE}=; HttpOnly;${secure ? ' Secure;' : ''} SameSite=Lax; Path=/api/auth/google; Max-Age=0`]);
+
+  async function googleRoute(req, res, url, client) {
+    if (req.method !== 'GET') throw new ApiError(405, 'method');
+    if (!google) throw new ApiError(404, 'not-found-route');
+    for (const [k, v] of pending) if (now() - v.at > 10 * 60_000) pending.delete(k);
+    if (url.pathname === '/api/auth/google/start') {
+      if (!googleStarts.has(client) || pending.size > 5000) return back(res, 'rate-limit'), true;
+      googleStarts.add(client);
+      const state = newToken(24), nonce = newToken(24);
+      pending.set(state, { nonce, invite: (url.searchParams.get('invite') ?? '').slice(0, 100), at: now() });
+      const to = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      for (const [k, v] of Object.entries({ client_id: google.clientId, redirect_uri: google.redirectUri, response_type: 'code',
+        scope: 'openid email', state, nonce, prompt: 'select_account' })) to.searchParams.set(k, v);
+      redirect(res, to.href, [`${G_COOKIE}=${state}; HttpOnly;${secure ? ' Secure;' : ''} SameSite=Lax; Path=/api/auth/google; Max-Age=600`]);
+      return true;
+    }
+    if (url.pathname !== '/api/auth/google/callback') throw new ApiError(404, 'not-found-route');
+    const state = url.searchParams.get('state') ?? '', code = url.searchParams.get('code') ?? '';
+    const p = pending.get(state);
+    pending.delete(state);
+    if (!p || !state || parseCookies(req.headers.cookie)[G_COOKIE] !== state) return back(res, 'google-failed'), true;
+    if (!code) return back(res, url.searchParams.has('error') ? 'google-cancelled' : 'google-failed'), true;
+    let claims;
+    try {
+      const r = await fetchImpl('https://oauth2.googleapis.com/token', {
+        method: 'POST', signal: AbortSignal.timeout(10_000), headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ code, client_id: google.clientId, client_secret: google.clientSecret, redirect_uri: google.redirectUri, grant_type: 'authorization_code' }),
+      });
+      if (!r.ok) { console.warn(`google sign-in: token endpoint answered ${r.status}`); return back(res, 'google-failed'), true; }
+      const idToken = String((await r.json()).id_token ?? '');
+      claims = JSON.parse(Buffer.from(idToken.split('.')[1] ?? '', 'base64url').toString('utf8'));
+    } catch (e) { console.warn(`google sign-in: ${e?.name ?? 'error'}`); return back(res, 'google-failed'), true; }
+    const ok = claims && ['https://accounts.google.com', 'accounts.google.com'].includes(claims.iss) && claims.aud === google.clientId
+      && Number(claims.exp) * 1000 > now() && claims.nonce === p.nonce && typeof claims.sub === 'string' && claims.sub.length <= 255;
+    if (!ok) return back(res, 'google-failed'), true;
+    const email = typeof claims.email === 'string' && claims.email_verified === true && EMAIL_RE.test(claims.email) ? claims.email : '';
+    let u = db.userByGoogle(claims.sub);
+    if (!u && email) {
+      u = db.userByEmail(email);
+      if (u?.google_sub) return back(res, 'google-failed'), true; // that account belongs to another Google account
+      if (u && !u.disabled) db.setGoogle(u.id, claims.sub);
+    }
+    if (u) {
+      if (u.disabled) return back(res, 'bad-login'), true;
+      startSession(res, u.id, req);
+      db.event(u.id, 'login', now(), { via: 'google' });
+      return back(res, null), true;
+    }
+    if (!email) return back(res, 'google-failed'), true;
+    const inv = p.invite ? db.invite(p.invite) : null;
+    if (!inv || inv.used_by || (inv.expires_at && inv.expires_at < now())) return back(res, 'need-invite'), true;
+    let id;
+    try {
+      id = db.tx(() => {
+        const uid = db.createUser({ email, passHash: '', now: now() }); // no password: Google only (an admin reset link can add one)
+        db.setGoogle(uid, claims.sub);
+        if (!db.useInvite(p.invite, uid, now())) throw new ApiError(400, 'bad-invite');
+        return uid;
+      })();
+    } catch { return back(res, 'bad-invite'), true; }
+    startSession(res, id, req);
+    db.event(id, 'register', now(), { via: 'google' });
+    return back(res, null), true;
+  }
+
   async function route(req, res, url, client) {
     const p = url.pathname;
     if (p === '/api/me') {
       if (req.method !== 'GET') throw new ApiError(405, 'method');
       const u = requireUser(req);
-      if (!u) throw new ApiError(401, 'login-required');
+      // Signed out: also say which ways of signing in there are.
+      if (!u) return json(res, 401, { error: 'login-required', google: !!google }), true;
       return json(res, 200, me(u)), true;
     }
+    if (p.startsWith('/api/auth/google/')) return googleRoute(req, res, url, client);
     if (!p.startsWith('/api/auth/')) return false;
     if (req.method !== 'POST') throw new ApiError(405, 'method');
     const b = await body(req);

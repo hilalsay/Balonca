@@ -91,8 +91,12 @@ const youtube = createYouTube({ run, cacheDir: process.env.YT_CACHE_DIR ?? fileU
 // Accounts (AUTH=on): every route but health needs a signed-in user. The database lives next to server/ (not in it:
 // deploys replace server/). Off by default, so turning it on is a decision.
 const db = openDb(env.BALONCA_DB ?? fileURLToPath(new URL('../data/balonca.db', import.meta.url)));
-const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0' }) : null;
-console.log(`accounts: ${accounts ? 'on (sign-in required)' : 'off'}`);
+// Sign in with Google: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (in /etc/balonca.env), Google sends people back to
+// PUBLIC_ORIGIN/api/auth/google/callback (register that address with the client).
+const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.PUBLIC_ORIGIN
+  ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: `${env.PUBLIC_ORIGIN}/api/auth/google/callback` } : null;
+const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0', google }) : null;
+console.log(`accounts: ${accounts ? `on (sign-in required; Google ${google ? 'on' : 'off'})` : 'off'}`);
 
 const handler = createHandler({
   auth: accounts,
