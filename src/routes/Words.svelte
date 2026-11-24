@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ShowLang from '../components/ShowLang.svelte';
+  import { AUTO_LANGS, type AutoLang } from '../lib/settings';
   import Mascot from '../components/Mascot.svelte';
   import Review from '../components/Review.svelte';
   import ConfirmButton from '../components/ConfirmButton.svelte';
@@ -60,6 +60,10 @@
       toast(t(`backup.err.${code}` as MessageKey), 'error', 7000);
     }
   }
+  // One line instead of chips: the language meanings are shown in (not the words' own language).
+  const ownLangs = $derived(new Set(app.words.map((w) => w.lang)));
+  const meaningChoices = $derived(AUTO_LANGS.filter((l) => !(ownLangs.size === 1 && ownLangs.has(l))));
+  function pickMeaning(l: AutoLang) { if (app.settings.separateMeaning) app.setSetting('meaningLang', l); else app.setTranslationLang(l); }
 </script>
 
 <div class="page">
@@ -76,7 +80,14 @@
     {/if}
   </div>
 
-  {#if app.words.length}<ShowLang compact />{/if}
+  {#if app.words.length && meaningChoices.length}
+    <label class="meanings"><span>{t('words.meaningsIn')}:</span>
+      <select value={app.settings.meaningLang} onchange={(e) => pickMeaning(e.currentTarget.value as AutoLang)}>
+        {#if !app.settings.meaningLang}<option value="">{t('common.choose')}…</option>{/if}
+        {#each meaningChoices as l}<option value={l}>{langName(l, i18n.locale)}</option>{/each}
+      </select>
+    </label>
+  {/if}
 
   {#if reviewing && lang}
     <Review {lang} onclose={() => (reviewing = false)} />
@@ -174,6 +185,8 @@
 </div>
 
 <style>
+  .meanings { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: var(--space-3); }
+  .meanings select { min-height: 44px; border-radius: 99px; padding: 0 12px; }
   .page { display: grid; gap: var(--space-4); }
   .title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
   h1 { font-size: clamp(1.6rem, 5vw, 2.2rem); }

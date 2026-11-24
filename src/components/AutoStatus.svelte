@@ -87,9 +87,9 @@
   .q { font-size: 0.92rem; color: var(--muted); }
   .ask.first .q { color: var(--text); font-weight: 700; font-size: 1rem; }
   .langs { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-  .langs button { border-radius: 99px; min-height: 40px; padding: 0 16px; }
-  .ask:not(.first) .langs button { min-height: 36px; font-size: 0.88rem; }
-  .remember { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); min-height: 36px; flex-basis: 100%; }
+  .langs button { border-radius: 99px; min-height: 44px; padding: 0 16px; }
+  .ask:not(.first) .langs button { min-height: 44px; font-size: 0.88rem; }
+  .remember { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); min-height: 44px; flex-basis: 100%; }
   .remember input { width: 18px; height: 18px; accent-color: var(--accent); }
   .short { display: none; }
   @media (max-width: 760px) { .remember .long { display: none; } .remember .short { display: inline; } }
@@ -99,13 +99,13 @@
     .auto { padding: 6px 10px; gap: 6px; border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; }
     ul { flex: 1 1 0; min-width: 0; }
     .ask { flex-basis: 100%; }
-    .stop { min-height: 32px; padding: 0 12px; font-size: 0.85rem; }
+    .stop { min-height: 44px; padding: 0 12px; font-size: 0.85rem; }
     progress { min-width: 40px; }
     li { font-size: 0.85rem; }
     .ask { gap: 6px 8px; }
     .q, .ask.first .q { font-size: 0.9rem; }
-    .langs button { min-height: 36px; padding: 0 14px; }
+    .langs button { min-height: 44px; padding: 0 14px; }
     .remember { display: none; } /* phones: the same choice is one tap away under Settings → translation language */
-    .ask.first .langs button { min-height: 34px; padding: 0 14px; }
+    .ask.first .langs button { min-height: 44px; padding: 0 14px; }
   }
 </style>

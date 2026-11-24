@@ -13,7 +13,8 @@
 
   let body = $state('');
   let title = $state('');
-  let picked = $state<string | null>(null); // a language the learner chose; otherwise the guess
+  let picked = $state<string | null>(null);
+  let chooseLang = $state(false); // a sure guess shows one line; the choices open on request // a language the learner chose; otherwise the guess
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement;
   let area: HTMLTextAreaElement;
@@ -86,6 +87,9 @@
 
     <fieldset class="langs">
       <legend>{t('read.add.lang')}{#if guess && !picked}<span class="guess"> · {t('read.add.guessed')}</span>{/if}</legend>
+      {#if guess && !chooseLang}
+        <p class="sure"><strong>{langName(lang, i18n.locale)} ✓</strong> <button type="button" class="link" onclick={() => (chooseLang = true)}>({t('read.add.change')})</button></p>
+      {:else}
       <div class="chips">
         {#each COMMON as code}
           <label class="chip" class:on={lang === code}>
@@ -97,6 +101,7 @@
           {#each others as code}<option value={code}>{langName(code, i18n.locale)}</option>{/each}
         </select>
       </div>
+      {/if}
       <p class="can small">
         <span class:yes={speech.canRead(lang)}>{speech.canRead(lang) ? '✓' : '✗'} {t('read.can.voice')}</span>
         <span class:yes={grammarLangs.includes(lang)}>{grammarLangs.includes(lang) ? '✓' : '✗'} {t('read.can.grammar')}</span>
@@ -104,8 +109,10 @@
       </p>
     </fieldset>
 
-    <label class="field"><span>{t('read.add.name')} <span class="muted">({t('read.add.optional')})</span></span>
-      <input bind:value={title} maxlength="120" placeholder={body.trim() ? titleFrom(body) : t('read.add.namePh')} autocomplete="off" /></label>
+    <details class="name">
+      <summary>{t('read.add.name')} <span class="muted">({t('read.add.optional')})</span></summary>
+      <input bind:value={title} maxlength="120" placeholder={body.trim() ? titleFrom(body) : t('read.add.namePh')} autocomplete="off" aria-label={t('read.add.name')} />
+    </details>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <button class="primary go" type="submit">{t('read.add.go')} →</button>
@@ -142,6 +149,10 @@
 </div>
 
 <style>
+  .sure { margin: 0; display: flex; gap: 8px; align-items: center; font-size: 1.05rem; }
+  .name summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; gap: 6px; }
+  .name input { min-height: 44px; width: 100%; margin-top: 6px; }
+  .chip { min-height: 44px; }
   .intro { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
   h1 { margin: 0; font-size: clamp(1.7rem, 5vw, 2.4rem); }
   .intro p { margin: 0; max-width: 44rem; font-size: 1.05rem; }
@@ -151,26 +162,24 @@
   textarea { width: 100%; min-height: 180px; resize: vertical; font-size: 1.02rem; line-height: 1.6; padding: 12px 14px; border-radius: var(--radius-sm); }
   .row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: -6px; }
   .small { font-size: 0.86rem; }
-  .link { all: unset; cursor: pointer; color: var(--accent); font-weight: 700; padding: 6px 0; }
+  .link { all: unset; cursor: pointer; color: var(--accent); font-weight: 700; min-height: 44px; display: inline-flex; align-items: center; }
   .link:focus-visible { outline: 3px solid var(--focus); }
   fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
   legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   .guess { color: var(--good); font-weight: 700; font-size: 0.85rem; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1.5px solid var(--line); border-radius: 99px; cursor: pointer; font-weight: 700; background: var(--surface); }
+  .chip { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1.5px solid var(--line); border-radius: 99px; cursor: pointer; font-weight: 700; background: var(--surface); min-height: 44px; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .chip input { position: absolute; opacity: 0; pointer-events: none; }
   .chip:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
-  select { min-height: 40px; border-radius: 99px; padding: 0 12px; max-width: 12rem; }
+  select { min-height: 44px; border-radius: 99px; padding: 0 12px; max-width: 12rem; }
   select.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
   .can { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--muted); }
   .can .yes { color: var(--good); font-weight: 700; }
-  .field { display: grid; gap: 4px; font-weight: 700; }
-  .field input { min-height: 44px; }
   .go { min-height: 52px; border-radius: 99px; font-weight: 800; font-size: 1.05rem; }
   .error { margin: 0; color: var(--danger); font-weight: 700; }
   .samples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: var(--space-3); font-size: 0.92rem; }
-  .samples button { min-height: 40px; border-radius: 99px; padding: 0 14px; font-weight: 700; }
+  .samples button { min-height: 44px; border-radius: 99px; padding: 0 14px; font-weight: 700; }
   .list { display: grid; gap: var(--space-3); }
   .list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
   .item { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); }

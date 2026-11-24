@@ -12,6 +12,7 @@
   import { account } from './lib/account.svelte';
   import { sync } from './lib/sync.svelte';
   import ImportAsk from './components/ImportAsk.svelte';
+  import FontAsk from './components/FontAsk.svelte';
   import { app } from './lib/state.svelte';
   import { t } from './lib/i18n/index.svelte';
   import type { Component } from 'svelte';
@@ -20,6 +21,7 @@
   const lazy = {
     watch: () => import('./routes/Watch.svelte'),
     read: () => import('./routes/Read.svelte'),
+    settings: () => import('./routes/Settings.svelte'),
     words: () => import('./routes/Words.svelte'),
     help: () => import('./routes/Help.svelte'),
   } as const;
@@ -76,6 +78,7 @@
 <Tour />
 <Toasts />
 <ImportAsk />
+{#if !gated && !signIn}<FontAsk />{/if}
 
 <style>
   main { max-width: 1200px; margin: 0 auto; padding: var(--space-4); outline: none; min-height: 70dvh; }

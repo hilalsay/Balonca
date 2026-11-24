@@ -19,6 +19,7 @@
   let full = $state(false);
   let pseudo = $state(false); // iPhone Safari cannot fullscreen arbitrary elements
   let seeking = $state<number | null>(null);
+  let more = $state(false);
 
   const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
   const fmt = (s: number) => {
@@ -84,6 +85,9 @@
   const shown = $derived(seeking ?? player.time);
 </script>
 
+<svelte:document onpointerdown={(e) => { if (more && !(e.target as HTMLElement).closest('.more')) more = false; }}
+  onkeydown={(e) => { if (more && e.key === 'Escape') more = false; }} />
+
 <svelte:window onkeydown={adjustKey} />
 
 <div class="wrap" class:full={isFull} bind:this={wrap}>
@@ -101,9 +105,6 @@
     {/if}
     <Overlay />
     <WordPopover where="stage" />
-    {#if app.vid && !subAdjust.on}
-      <button class="aa" onclick={() => { player.pause(); subAdjust.on = true; }} aria-label={t('subadj.open')} title={t('subadj.open')}>Aa</button>
-    {/if}
     {#if subAdjust.on}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="adjust" class:flip={app.settings.subPos < 50}
@@ -141,21 +142,45 @@
         <Icon name={player.playing ? 'pause' : 'play'} fill />
       </button>
       <button onclick={() => player.jump(1)} aria-label={t('ctl.next')} title={t('ctl.next')}><Icon name="next" /></button>
-      <select aria-label={t('ctl.speed')} value={player.rate} onchange={(e) => player.setRate(+e.currentTarget.value)}>
-        {#each RATES as r}<option value={r}>{r}×</option>{/each}
-      </select>
       <button class="toggle" aria-pressed={player.loop} onclick={() => (player.loop = !player.loop)} aria-label={t('ctl.loop')} title="{t('ctl.loop')} (R)"><Icon name="repeat" /></button>
       <button class="spacer" onclick={toggleFullscreen} aria-label={isFull ? t('ctl.exitFullscreen') : t('ctl.fullscreen')} title="{t('ctl.fullscreen')} (F)">
         <Icon name={isFull ? 'shrink' : 'expand'} />
       </button>
-      {#if onlink && !isFull}
-        <button class="link-btn" onclick={onlink} aria-label={t('watch.change')} title={t('watch.change')}><Icon name="link" /></button>
-      {/if}
+      <!-- Less used: speed, subtitle place and size, another video -->
+      <div class="more">
+        <button class="more-btn" class:on={more} aria-expanded={more} aria-haspopup="menu" onclick={() => (more = !more)} aria-label={t('more.menu')} title={t('more.menu')}>
+          ⋯{#if player.rate !== 1}<small class="rate-tag">{player.rate}×</small>{/if}
+        </button>
+        {#if more}
+          <div class="menu" role="menu">
+            <p class="menu-h">{t('ctl.speed')}</p>
+            <div class="rates">
+              {#each RATES as r}<button role="menuitemradio" aria-checked={player.rate === r} class:on={player.rate === r} onclick={() => { player.setRate(r); }}>{r}×</button>{/each}
+            </div>
+            <button role="menuitem" class="item" onclick={() => { more = false; player.pause(); subAdjust.on = true; }}><span class="aa-ic" aria-hidden="true">Aa</span> {t('subadj.open')}</button>
+            {#if onlink && !isFull}
+              <button role="menuitem" class="item" onclick={() => { more = false; onlink?.(); }}><Icon name="link" /> {t('watch.change')}</button>
+            {/if}
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 </div>
 
 <style>
+  .more { position: relative; }
+  .more-btn { position: relative; font-size: 1.3rem; font-weight: 800; line-height: 1; }
+  .more-btn.on { border-color: var(--accent); color: var(--accent); }
+  .rate-tag { position: absolute; top: -8px; right: -6px; font: 800 0.65rem var(--font-body); background: var(--accent); color: var(--accent-ink); border-radius: 99px; padding: 1px 5px; }
+  .menu { position: absolute; z-index: 30; right: 0; bottom: calc(100% + 8px); width: min(300px, calc(100vw - 24px)); display: grid; gap: 8px; padding: 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+  .menu-h { margin: 0; font-weight: 800; font-size: 0.9rem; }
+  .rates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .rates button { min-height: 44px; padding: 0; font-weight: 700; }
+  .rates .on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .item { display: flex !important; align-items: center; gap: 10px; justify-content: flex-start !important; min-height: 48px; padding: 0 12px !important; font-weight: 700; text-align: left; }
+  .aa-ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 800 0.75rem var(--font-display); }
   .wrap { display: grid; gap: var(--space-2); }
   .stage { position: relative; background: #000; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); }
   .yt, .yt :global(iframe) { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -166,9 +191,6 @@
   }
   .placeholder span { opacity: 0.8; max-width: 26rem; }
   .placeholder.error { background: #2a1420; color: #ffd5de; }
-  .aa { position: absolute; z-index: 7; top: 8px; right: 8px; min-height: 0; min-width: 0; width: 38px; height: 38px; padding: 0;
-    border: 0; border-radius: 50%; background: rgb(0 0 0 / 0.55); color: #fff; font: 800 0.95rem var(--font-display); }
-  .aa:hover { background: rgb(0 0 0 / 0.75); transform: none; }
   .adjust { position: absolute; inset: 0; z-index: 8; cursor: ns-resize; touch-action: none; background: rgb(0 0 0 / 0.25);
     display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; }
   .adjust.flip { flex-direction: column-reverse; } /* subtitles up top: the toolbar moves out of their way */
@@ -186,11 +208,9 @@
   .time { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--muted); min-width: 3.2rem; text-align: center; }
   .buttons { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
   .buttons button { min-width: 44px; padding: 0 12px; display: inline-grid; place-items: center; }
-  .link-btn { display: none !important; }
   .play { min-width: 56px !important; }
   .toggle[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .spacer { margin-left: auto; }
-  select { min-width: 72px; }
 
   @media (max-width: 760px) {
     .wrap { gap: 4px; }
@@ -200,12 +220,9 @@
     /* every control shares the row, so it fits any phone width (no fixed minimums that push the page wider) */
     .buttons { gap: 6px; flex-wrap: nowrap; }
     .buttons > * { flex: 1 1 0; min-width: 0 !important; }
-    .buttons button { min-height: 42px; padding: 0; }
+    .buttons button { min-height: 44px; padding: 0; }
     .buttons .play { flex-grow: 1.4; }
-    .buttons select { flex-grow: 1.5; min-height: 42px; padding: 0 2px; text-align: center; }
     .spacer { margin-left: 0; }
-    .link-btn { display: inline-grid !important; }
-    .aa { width: 34px; height: 34px; top: 6px; right: 6px; font-size: 0.85rem; }
     .adjust { padding: 6px; gap: 4px; }
     .adj-bar { gap: 4px; padding: 4px; }
     .adj-bar button { min-height: 34px; min-width: 34px; padding: 0 8px; font-size: 0.92rem; }

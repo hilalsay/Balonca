@@ -92,7 +92,8 @@
 </section>
 
 <style>
-  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 0.95rem; line-height: 1; vertical-align: middle; }
+  @media (pointer: coarse) { .say { min-width: 44px; min-height: 44px; } }
+  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 0.95rem; line-height: 1; vertical-align: middle; }
   .review { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
   header { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
   h2 { font-size: 1.15rem; }

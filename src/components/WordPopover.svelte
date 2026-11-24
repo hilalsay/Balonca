@@ -161,6 +161,7 @@
 {/if}
 
 <style>
+  @media (pointer: coarse) { .say { min-width: 44px; min-height: 44px; } }
   .pop {
     position: fixed; z-index: 300; width: 320px; max-width: calc(100vw - 16px);
     display: grid; gap: 6px; padding: var(--space-3) var(--space-3) var(--space-3);
@@ -181,12 +182,12 @@
   .st { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
   .st.learning { background: color-mix(in srgb, var(--pink) 22%, transparent); color: var(--text); }
   .st.known { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
-  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; align-self: center; }
+  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; align-self: center; }
   .explain { justify-self: start; font-weight: 700; font-size: 0.9rem; padding: 4px 0; }
-  .x { position: absolute; right: -6px; top: -6px; min-width: 36px; min-height: 36px; padding: 0; border: 0; background: none; color: var(--muted); }
+  .x { position: absolute; right: -6px; top: -6px; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); }
   .q { margin: 0; font-size: 0.88rem; color: var(--muted); font-weight: 700; }
   .langs, .actions, .switch { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-  .langs button { border-radius: 99px; min-height: 36px; padding: 0 14px; }
+  .langs button { border-radius: 99px; min-height: 44px; padding: 0 14px; }
   .loading { display: flex; align-items: center; gap: 8px; margin: 0; }
   .spin { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin 0.9s linear infinite; }
   .error { margin: 0; color: var(--danger); font-weight: 700; font-size: 0.9rem; }
@@ -197,10 +198,10 @@
   .dl { font-style: normal; }
   .others { margin: 0; font-size: 0.88rem; }
   .warn { margin: 0; font-size: 0.8rem; color: var(--danger); }
-  .link { all: unset; cursor: pointer; font-size: 0.82rem; color: var(--accent); text-decoration: underline; }
+  .link { all: unset; cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; font-size: 0.82rem; color: var(--accent); text-decoration: underline; }
   .link:focus-visible { outline: 2px solid var(--focus); }
   .actions { margin-top: 4px; }
-  .actions button { flex: 1; min-height: 42px; font-weight: 800; }
+  .actions button { flex: 1; min-height: 44px; font-weight: 800; }
   .actions .done { background: color-mix(in srgb, var(--good) 14%, var(--surface)); border-color: var(--good); color: var(--good); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } }

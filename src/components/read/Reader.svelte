@@ -195,7 +195,7 @@
         <button class="ctl" onclick={() => speech.step(1)} disabled={here >= total - 1} aria-label={t('read.nextSentence')}><Icon name="next" size={20} /></button>
         <span class="where" aria-live="off">{here + 1}<span class="muted">/{total}</span></span>
         <span class="grow"></span>
-        <button class="chip" onclick={cycleRate} aria-label={t('read.set.rate')} title={t('read.set.rate')}>{app.settings.readRate === 1 ? '1×' : `${app.settings.readRate}×`}</button>
+        <button class="chip rate" onclick={cycleRate} aria-label={t('read.set.rate')} title={t('read.set.rate')}>{app.settings.readRate === 1 ? '1×' : `${app.settings.readRate}×`}</button>
         <button class="chip" class:on={app.settings.readLoop} aria-pressed={app.settings.readLoop} onclick={() => app.setSetting('readLoop', !app.settings.readLoop)} aria-label={t('read.set.loop')} title={t('read.set.loop')}><Icon name="repeat" size={18} /></button>
       {:else}
         <span class="novoice">{t('read.noVoice.short')}</span><span class="grow"></span>
@@ -226,14 +226,14 @@
   .reader { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--space-5); align-items: start; }
   .main { min-width: 0; display: grid; gap: var(--space-3); }
   .top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-  .back { font-weight: 700; text-decoration: none; padding: 8px 0; }
-  .gear { min-height: 40px; border-radius: 99px; padding: 0 14px; font-weight: 700; }
+  .back { font-weight: 700; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+  .gear { min-height: 44px; border-radius: 99px; padding: 0 14px; font-weight: 700; }
   h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.1rem); overflow-wrap: anywhere; }
   .meta { margin: 0; }
   .hint { display: grid; gap: 6px; padding: var(--space-3) var(--space-4); border-radius: var(--radius); background: var(--accent-soft); }
   .hint ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
   .hint li { display: flex; gap: 8px; }
-  .hint button { justify-self: start; min-height: 40px; border-radius: 99px; padding: 0 18px; margin-top: 4px; }
+  .hint button { justify-self: start; min-height: 44px; border-radius: 99px; padding: 0 18px; margin-top: 4px; }
   .notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); }
   .notice.err { color: var(--danger); font-weight: 700; }
 
@@ -265,7 +265,7 @@
   .ctl.play { min-width: 54px; min-height: 54px; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .where { font: 800 0.95rem var(--font-display); margin-left: 4px; white-space: nowrap; }
   .grow { flex: 1; }
-  .chip { min-height: 40px; min-width: 44px; border-radius: 99px; padding: 0 10px; font-weight: 800; display: grid; place-items: center; }
+  .chip { min-height: 44px; min-width: 44px; border-radius: 99px; padding: 0 10px; font-weight: 800; display: grid; place-items: center; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .novoice { font-size: 0.88rem; color: var(--muted); padding-left: 6px; }
   .problem { margin: 0; color: var(--danger); font-weight: 700; font-size: 0.9rem; }
@@ -294,7 +294,9 @@
   }
   @media (min-width: 901px) and (max-width: 1100px) { .reader { grid-template-columns: minmax(0, 1fr) 330px; gap: var(--space-4); } }
   @media (max-width: 760px) and (orientation: landscape) { .bar { bottom: var(--space-2); } }
-  @media (max-width: 480px) { .long { display: none; } .where { font-size: 0.85rem; } .ctl.play { min-width: 50px; min-height: 50px; } }
+  /* Phones: speed is in ⚙ (reading settings); repeat stays in view. A 44 px tap area around the small bubble. */
+  @media (pointer: coarse) { .sb { position: relative; } .sb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); } }
+  @media (max-width: 480px) { .rate { display: none; } .long { display: none; } .where { font-size: 0.85rem; } .ctl.play { min-width: 50px; min-height: 50px; } }
   @keyframes sheet { from { transform: translateY(100%); } }
   @media (prefers-reduced-motion: reduce) { .panel.sheet, .spin { animation: none; } }
 </style>

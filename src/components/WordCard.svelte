@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import WordMeaning from './WordMeaning.svelte';
-  import ConfirmButton from './ConfirmButton.svelte';
+  import { toast } from '../lib/toast.svelte';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n/index.svelte';
   import { tokenize } from '../lib/words/tokenize';
@@ -18,6 +18,14 @@
   /** `onplay` set: jump inside the open player (Words tab); otherwise link to the video (My words page). */
   let { word, onplay }: { word: SavedWord; onplay?: (t: number) => void } = $props();
   let open = $state(false);
+  let menu = $state(false);
+  /** Deleting comes with five seconds to change one's mind. */
+  function remove() {
+    menu = false;
+    const copy = $state.snapshot(word) as SavedWord;
+    app.removeWord(word.id);
+    toast(t('undo.deleted', { word: copy.w }), 'info', 5000, { label: t('undo'), run: () => app.restoreWord(copy) });
+  }
 
   const parts = $derived(tokenize(word.ctx, word.lang));
   // Everything is shown in the language chosen above the list; something in another language is labelled as such.
@@ -71,6 +79,8 @@
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 </script>
 
+<svelte:document onpointerdown={(e) => { if (menu && !(e.target as HTMLElement).closest('.more')) menu = false; }} />
+
 <article class="wc" class:open>
   <div class="top">
     <strong class="w" lang={word.lang}>{word.w}</strong>
@@ -111,7 +121,14 @@
     {/if}
     <span class="grow"></span>
     <button class="fix" class:on={fixing} onclick={() => (fixing ? (fixing = false) : startFix())} aria-expanded={fixing} aria-label={t('fix.open')} title={t('fix.open')}>✏️</button>
-    <ConfirmButton onconfirm={() => app.removeWord(word.id)} label={t('words.remove', { word: word.w })}>✕</ConfirmButton>
+    <div class="more">
+      <button class="more-btn" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)} aria-label={t('more.menu')} title={t('more.menu')}>⋯</button>
+      {#if menu}
+        <div class="menu" role="menu">
+          <button role="menuitem" class="danger" onclick={remove}>🗑 {t('words.remove', { word: word.w })}</button>
+        </div>
+      {/if}
+    </div>
   </div>
 
   {#if fixing}
@@ -132,7 +149,14 @@
 </article>
 
 <style>
-  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 32px; min-height: 32px; padding: 0; border-radius: 50%; font-size: 0.9rem; line-height: 1; }
+  @media (pointer: coarse) { .say { min-width: 44px; min-height: 44px; } }
+  .more { position: relative; }
+  .more-btn { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.2rem; font-weight: 800; border-radius: 12px; }
+  .menu { position: absolute; z-index: 20; right: 0; bottom: calc(100% + 6px); min-width: 220px; padding: 6px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); }
+  .menu button { width: 100%; min-height: 48px; text-align: left; justify-content: flex-start; display: flex; align-items: center; gap: 8px; border: 0; font-weight: 700; }
+  .menu .danger { color: var(--danger); }
+  .say { display: inline-grid; place-items: center; color: var(--accent); min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 0.9rem; line-height: 1; }
   .wc { display: grid; gap: 6px; padding: var(--space-3); border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
   .wc.open { border-color: var(--accent); }
   .top { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
@@ -144,14 +168,14 @@
   .dict { margin: 0; font-size: 0.84rem; }
   .dict [lang='en'] { font-style: italic; }
   .mine { margin-left: 6px; font: 700 0.7rem var(--font-body); color: var(--good); white-space: nowrap; }
-  .fix { min-height: 38px; min-width: 38px; padding: 0 8px; }
+  .fix { min-height: 44px; min-width: 44px; padding: 0 8px; }
   .fix.on { background: var(--accent-soft); border-color: var(--accent); }
   .fixer { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); }
   .fixer label { display: grid; gap: 4px; font-size: 0.85rem; font-weight: 700; }
   .fixer input, .fixer textarea { width: 100%; min-width: 0; box-sizing: border-box; font-weight: 400; }
   .fixer .note { margin: 0; font-size: 0.8rem; }
   .fix-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
-  .fix-actions button { min-height: 40px; padding: 0 16px; }
+  .fix-actions button { min-height: 44px; padding: 0 16px; }
   .sent { margin: 0; font-size: 0.92rem; color: var(--muted); overflow-wrap: anywhere; }
   .sent mark { background: var(--accent-soft); color: var(--text); font-weight: 700; border-radius: 4px; padding: 0 3px; }
   .tr { margin: 0; font-size: 0.88rem; color: var(--text); opacity: 0.75; overflow-wrap: anywhere; }
@@ -166,7 +190,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: 2px; }
   .grow { flex: 1; }
-  .mean, .play { min-height: 38px; padding: 0 12px; font-size: 0.88rem; font-weight: 700; }
+  .mean, .play { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; font-size: 0.88rem; font-weight: 700; }
   .mean.on { background: var(--accent-soft); border-color: var(--accent); }
   a.play { display: inline-flex; align-items: center; border: 1.5px solid var(--line); border-radius: var(--radius-sm); text-decoration: none; color: var(--text); background: var(--surface); }
   a.play:hover { border-color: var(--accent); }
@@ -175,7 +199,7 @@
     .long { display: none; }
     .short { display: inline; }
     .actions { flex-wrap: nowrap; gap: 6px; }
-    .mean, .play { min-height: 40px; }
+    .mean, .play { min-height: 44px; }
   }
-  .actions :global(.wrap button) { min-height: 38px; min-width: 38px; padding: 0 10px; font-size: 0.88rem; }
+  .actions :global(.wrap button) { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 0.88rem; }
 </style>
