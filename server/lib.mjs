@@ -206,6 +206,7 @@ export function createHandler({
       }
       if (req.method !== 'GET') throw new ApiError(405, 'method');
       if (url.pathname === '/api/config') return send(200, appConfig);
+      if (url.pathname === '/api/me' || url.pathname.startsWith('/api/auth/')) throw new ApiError(404, 'no-accounts'); // accounts off
       if (url.pathname === '/api/nlp') return send(200, nlpStatus ? await nlpStatus() : { parse: [], tts: [] });
       if (url.pathname === '/api/health') {
         return send(200, { ok: true, ytdlp: ytdlpInstalled, youtube: yt.status(), ...(llmStatus ? { llm: await llmStatus() } : {}), ...(nlpStatus ? { nlp: await nlpStatus() } : {}) });
