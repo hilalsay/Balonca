@@ -106,5 +106,6 @@ For each record, a reviewer checks four things and corrects the record where nee
 3. Are the notes right, and is anything wrong in `mustNot` or missing from it?
 4. Is the Turkish translation natural and correct?
 
-When a record is reviewed, set `checked_by`. When the reviewer disagrees with a convention itself, change
+When a record is reviewed, set `checked_by`. The sheet `review.csv` has a row per record for this (columns `OK?` and
+`comment`); `scripts/grammar-gold/apply-review.mjs` reads it back (see scripts/grammar-gold/README.md). When the reviewer disagrees with a convention itself, change
 the convention here first, then every affected record.

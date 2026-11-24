@@ -463,6 +463,12 @@ def build(lang, rows):
 
 if __name__ == '__main__':
     outdir = sys.argv[1]
+    # Reviewed records live only in the JSONL (apply-review.mjs); rebuilding would reset them to "draft".
+    for lang in ('nl', 'en'):
+        try: reviewed = [r['id'] for r in map(json.loads, open(f'{outdir}/{lang}.jsonl', encoding='utf-8')) if r.get('checked_by') != 'draft']
+        except FileNotFoundError: reviewed = []
+        if reviewed and '--force' not in sys.argv:
+            sys.exit(f'{lang}.jsonl has reviewed records ({len(reviewed)}); edit the JSONL directly, or pass --force to rebuild as draft')
     allerr = []
     for lang, rows in (('nl', NL + NL_HARD), ('en', EN + EN_HARD)):
         recs, errs = build(lang, rows)
