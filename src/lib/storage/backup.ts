@@ -81,7 +81,7 @@ function cleanTrack(x: any): StoredTrack | null {
   };
 }
 
-export const TEXT_LIMIT = 60_000; // characters of one text
+export const TEXT_LIMIT = 200_000; // characters of one text (the server takes the same, sync.mjs)
 
 /** A text from a backup file, field by field. */
 export function cleanText(x: any): TextDoc | null {

@@ -133,6 +133,13 @@ under that user only. With `PIVOT=en`, Turkish is made from the English translat
 | `GET /api/tts` | `?lang&word=` (one word), `?lang&lib=&text=` (a sentence of a text), `?lang&wordId=` |
 | `POST /api/parse` | `{lang, ref:{libraryId}, sents}` (every sentence must be in the text) |
 
+**Shared pool (phase 4b).** A video translation, once complete, is offered to everyone who opens that video:
+`GET /api/translations?v=` lists the languages ready, and the app loads them at once (no model call). A learner who
+does not like it can ask for a new one (`{…, fresh: true}`): it is made again and kept as that learner's own
+version, which they keep seeing; others keep the shared one (`RETRANSLATE_PER_DAY`, default 3). Word meanings are
+kept in two halves: the word's meanings (shared by everyone, no sentence in them) and which one a sentence uses (a
+small call, cached per sentence; a sentence from someone's own text under that user only).
+
 How translation keeps small models accurate:
 - **Sentences, not lines.** Subtitle lines are cut mid-sentence ("Ik graaf naar een verborgen" / "schat."), which makes
   small models shift words between lines. Lines are joined and re-split into sentences, each with a time span
@@ -151,6 +158,14 @@ Environment: `OLLAMA_URL` (default `http://127.0.0.1:11434`, `off` disables tran
 On a CPU, `gemma3` (4B) translates about one sentence per second: a 10-minute video takes 3–4 minutes.
 English output is good; Turkish is usable with occasional wrong words, and a larger model (e.g. `gemma3:12b`, ~8 GB RAM)
 improves it. `qwen2.5:3b` tends to copy the Dutch input back instead of translating.
+
+## Accounts, backups, privacy
+- `DELETE /api/me {confirm: <e-mail>}` deletes the signed-in account and all of its own data (words, texts, settings,
+  sessions, events; the user's own cached translations); invites it used stay used. In the app: Settings → My account.
+- `scripts/backup-db.mjs <db> <folder> [days]` makes a consistent copy of the database while the server runs
+  (`VACUUM INTO`), checks it, keeps it readable by its owner only and deletes copies older than `days` (14). Run it
+  nightly from cron, e.g. `30 3 * * * node /path/backup-db.mjs /path/balonca.db /path/backups 14`.
+- What is stored and where it goes is explained to users in Help → Privacy.
 
 ## Word meanings
 `POST /api/define` with `{word, lang, to, ref, ctx?}` (see the table above) answers `{lemma, inContext, senses:[{head,pos,meaning,en?,example?,best?}], source}`.

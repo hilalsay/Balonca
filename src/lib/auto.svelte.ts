@@ -26,6 +26,16 @@ export function pivotOrder(src: string, wanted: string[], open: readonly string[
   return out;
 }
 const FINISHED = ' (AI)';
+const BASE = (import.meta.env.VITE_SUBS_API as string | undefined) ?? '/api';
+
+/** Languages this video is already translated into on the server (phase 4b): shown at once, at no model cost. */
+async function readyOnServer(vid: string): Promise<string[]> {
+  try {
+    const r = await fetch(`${BASE}/translations?v=${encodeURIComponent(vid)}`);
+    const j = r.ok ? ((await r.json()) as { ready?: { to: string }[] }) : null;
+    return (j?.ready ?? []).map((x) => x.to).filter((l): l is string => typeof l === 'string');
+  } catch { return []; }
+}
 
 /**
  * Finished machine translations that contain a broken line, plus the Turkish ones made from a broken English one
@@ -76,7 +86,24 @@ class AutoSubs {
     const broken = brokenTracks(app.tracks);
     for (const t of broken) app.removeTrack(t.id);
     const redo = [...new Set([...interrupted, ...broken.map((t) => t.lang)])];
-    if (!app.tracks.length || redo.length) await this.run(vid, redo.length ? redo : undefined);
+    // Translations someone already made for this video come along by themselves (shared, nothing to wait for).
+    const ready = (await readyOnServer(vid)).filter((l) => AUTO_LANGS.includes(l as (typeof AUTO_LANGS)[number]) && !app.tracks.some((t) => t.lang === l));
+    if (this.openedFor !== vid) return;
+    const auto = app.settings.autoTranslate;
+    const targets = [...new Set([...redo, ...ready, ...(!app.tracks.length && auto !== 'ask' ? [auto] : [])])];
+    if (!app.tracks.length || targets.length) await this.run(vid, targets.length ? targets : undefined);
+  }
+
+  /** Machine translations of this video the learner may ask to have made again ("Try a new translation"). */
+  aiTracks(): string[] {
+    return [...new Set(app.tracks.filter((t) => t.name.endsWith(FINISHED)).map((t) => t.lang))];
+  }
+
+  /** A new translation into `lang`, kept as this learner's own (the server limits how many a day). */
+  retranslate(lang: string) {
+    if (!app.vid) return;
+    for (const t of app.tracks.filter((x) => x.lang === lang && x.name.endsWith(FINISHED))) app.removeTrack(t.id);
+    void this.run(app.vid, [lang], [lang]);
   }
 
   /**
@@ -84,7 +111,7 @@ class AutoSubs {
    * remembered language (Settings), or nothing: the status bar then asks which language to translate into, so no
    * time is spent on a translation the user does not want.
    */
-  async run(vid: string, targets?: string[]) {
+  async run(vid: string, targets?: string[], fresh: string[] = []) {
     this.cancel();
     const ctl = (this.ctl = new AbortController());
     const signal = ctl.signal;
@@ -145,7 +172,7 @@ class AutoSubs {
           const yt = pickSource(list.tracks);
           if (!yt) throw new TranslateError('unavailable', 'no-subs');
           await serverTranslate({
-            source: { v: vid, code: yt.code, kind: yt.kind === 'manual' ? 'manual' : 'auto' }, to: lang, signal,
+            source: { v: vid, code: yt.code, kind: yt.kind === 'manual' ? 'manual' : 'auto', ...(fresh.includes(lang) ? { fresh: true } : {}) }, to: lang, signal,
             onQueued: (ahead) => { job.phase = 'queued'; job.ahead = ahead; },
             onCues: (cues, done, total) => {
               if (app.vid !== vid) return;

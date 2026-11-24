@@ -199,7 +199,7 @@ export function checkReply(obj, texts) {
  * text, and as a last resort keep their source text. Network / model-missing problems still throw.
  * `chat` is injectable for tests.
  */
-export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = chatStream }) {
+export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = chatStream, temperature = 0.2 }) {
   const url = `${baseUrl.replace(/\/+$/, '')}/api/chat`;
   const headers = hostHeader ? { host: hostHeader } : {};
   const fromName = languageName(from), toName = languageName(to);
@@ -218,7 +218,7 @@ export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = 
     const content = await ask({
       format: schemaFor(texts.length),
       // A generous budget for the real answer; a runaway model is cut off long before the context fills up.
-      options: { temperature: 0.2, num_ctx: 4096, num_predict: Math.min(2048, 64 + 16 * texts.length + 2 * chars) },
+      options: { temperature, num_ctx: 4096, num_predict: Math.min(2048, 64 + 16 * texts.length + 2 * chars) },
       messages: [{ role: 'system', content: sys + extra },
         { role: 'user', content: JSON.stringify({ context, translate: Object.fromEntries(texts.map((t, i) => [String(i + 1), t])) }) }],
     }, signal);
@@ -228,7 +228,7 @@ export function ollamaTranslator({ baseUrl, model, hostHeader, from, to, chat = 
   /** Last resort for a single line: no JSON at all. */
   const plain = async (text, context, signal) => {
     const content = await ask({
-      options: { temperature: 0.2, num_ctx: 2048, num_predict: Math.min(400, 48 + 3 * text.length) },
+      options: { temperature, num_ctx: 2048, num_predict: Math.min(400, 48 + 3 * text.length) },
       messages: [
         { role: 'system', content: `Translate the user's ${fromName} subtitle line into natural, spoken ${toName}. Reply with the translation only: no quotes, no notes, no alternatives.` },
         { role: 'user', content: (context.length ? `(Earlier: ${context.join(' ')})\n\n` : '') + text },
@@ -338,7 +338,7 @@ export function parseRequest(raw) {
   }
   const v = String(b?.v ?? ''), code = String(b?.code ?? ''), kind = b?.kind === 'manual' ? 'manual' : b?.kind === 'auto' ? 'auto' : '';
   if (!/^[A-Za-z0-9_-]{11}$/.test(v) || !LANG_RE.test(code) || code.startsWith('-') || !kind) throw new ApiError(400, 'bad-request');
-  return { v, code, kind, to };
+  return { v, code, kind, to, ...(b.fresh === true ? { fresh: true } : {}) };
 }
 /** "nl-orig", "en-US" -> "nl", "en". */
 export const baseLang = (code) => String(code).toLowerCase().replace(/-orig$/, '').split(/[-_]/)[0];
@@ -396,7 +396,7 @@ export function healed(out, units) {
  */
 export function createTranslateHandler({
   baseUrl = 'http://127.0.0.1:11434', model: defaultModel = 'gemma3:latest', models = {}, hostHeader = '', cacheDir = '',
-  jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now, sources, pivot = 'off',
+  jobsPerHour = 12, makeTranslator = ollamaTranslator, now = Date.now, sources, pivot = 'off', retranslatePerDay = 3,
   chat, // model call (llm/index.mjs); default: Ollama directly
   jobs = 1, parallel = 1, // jobs at once / batches of one job at once (Tinker: several; local model: 1)
 } = {}) {
@@ -409,10 +409,37 @@ export function createTranslateHandler({
     recent.push(t); hits.set(ip, recent);
     return true;
   };
+  const fresh = new Map(); // user -> times of "try a new translation" (per day)
+  const allowFresh = (uid) => {
+    const t = now(), recent = (fresh.get(uid) ?? []).filter((x) => t - x < 86_400_000);
+    if (recent.length >= retranslatePerDay) return false;
+    recent.push(t); fresh.set(uid, recent);
+    return true;
+  };
   const digest = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 24);
   // Translations of YouTube subtitles are shared by everyone and named after the video, so sources.mjs can tell
   // which sentences the server itself wrote for it. A user's own texts are kept under that user only.
   const videoKey = (v, code, kind, via, to, model) => `yt-${v}-${digest([code, kind, via, to, model])}`;
+
+  /**
+   * Languages a video is already translated into, completely, by the model in use (phase 4b): opening the video
+   * shows them at once, at no model cost. A user's own retranslations are not offered to others.
+   */
+  async function available(v) {
+    if (!cacheDir || !/^[A-Za-z0-9_-]{11}$/.test(v)) return [];
+    const { readdir } = await import('node:fs/promises');
+    let names = [];
+    try { names = (await readdir(cacheDir)).filter((f) => f.startsWith(`yt-${v}-`) && f.endsWith('.json') && !/-u\d+\.json$/.test(f)); } catch { return []; }
+    const out = [];
+    for (const f of names) {
+      const x = await cache.get(f.slice(0, -5)), m = x?.meta;
+      if (!m || !Array.isArray(x.out) || x.out.length < m.total) continue;
+      const via = pivot === 'en' && m.to === 'tr' && baseLang(m.code) !== 'en' ? 'en' : '';
+      if (m.via !== via || m.model !== modelFor({ model: defaultModel, models }, m.to)) continue;
+      if (!out.some((o) => o.to === m.to)) out.push({ to: m.to, code: m.code, kind: m.kind });
+    }
+    return out;
+  }
 
   /** Texts of every translation made for a video (for sources.mjs). */
   async function madeFor(v) {
@@ -427,6 +454,7 @@ export function createTranslateHandler({
 
   const handler = (req, res, ip, user) => llmContext.run({}, () => translate(req, res, ip, user));
   handler.madeFor = madeFor;
+  handler.available = available;
   return handler;
 
   async function translate(req, res, ip, user) {
@@ -440,11 +468,21 @@ export function createTranslateHandler({
       if (!from) throw new ApiError(400, 'bad-request');
       units = lib.sentences.map((text, i) => ({ start: i, end: i, text }));
       const body = digest(lib.sentences);
-      keyOf = (via, to, model) => `lib-${user.id}-${digest([q.libraryId, body, via, to, model])}`;
+      keyOf = async (via, to, model) => `lib-${user.id}-${digest([q.libraryId, body, via, to, model])}`;
     } else {
       from = baseLang(q.code);
       units = toUnits(await sources.transcript(q.v, q.code, q.kind, ip));
-      keyOf = (via, to, model) => videoKey(q.v, q.code, q.kind, via, to, model);
+      // "Try a new translation": that user's own version, kept apart; the user keeps seeing it from then on.
+      const mine = (via, to, model) => `${videoKey(q.v, q.code, q.kind, via, to, model)}-u${user?.id ?? 0}`;
+      keyOf = async (via, to, model, last) => {
+        if (!last || !user) return videoKey(q.v, q.code, q.kind, via, to, model);
+        if (q.fresh) return mine(via, to, model);
+        return (await cache.get(mine(via, to, model))) ? mine(via, to, model) : videoKey(q.v, q.code, q.kind, via, to, model);
+      };
+      if (q.fresh) {
+        if (!user) throw new ApiError(401, 'login-required');
+        if (!allowFresh(user.id)) throw new ApiError(429, 'retranslate-limit');
+      }
     }
     if (from === q.to) throw new ApiError(400, 'bad-request');
     if (!units.length) throw new ApiError(404, 'no-subs');
@@ -474,8 +512,10 @@ export function createTranslateHandler({
       for (const [n, step] of steps.entries()) {
         const last = n === steps.length - 1;
         const model = modelFor({ model: defaultModel, models }, step.to);
-        const key = keyOf(step.via, step.to, model);
-        const saved = (await cache.get(key)) ?? { out: [] };
+        const key = await keyOf(step.via, step.to, model, last);
+        const saved = (last && q.fresh) ? { out: [] } : (await cache.get(key)) ?? { out: [] };
+        // What this translation is (phase 4b: offered to everyone who opens the video once it is complete).
+        if (!lib) saved.meta = { code: q.code, kind: q.kind, via: step.via, to: step.to, model, total: units.length };
         saved.out = healed(saved.out, units);
         const complete = saved.out.length >= units.length;
         if (!complete && !counted) { if (!allow(ip)) throw new ApiError(429, 'rate-limit'); counted = true; }
@@ -484,7 +524,8 @@ export function createTranslateHandler({
           send({ type: 'meta', total: units.length, model, cached: saved.out.length });
           if (saved.out.length) send({ type: 'cues', done: saved.out.length, cues: timed(0, saved.out.length) });
         } else send({ type: 'pivot', total: units.length, done: Math.min(saved.out.length, units.length) });
-        if (!complete) await runJob({ units: srcOut ? units.map((u, i) => ({ ...u, text: srcOut[i] })) : units, saved, key, model, step, ctl,
+        if (complete && !lib && !(await cache.get(key))?.meta) await cache.set(key, saved); // older entries learn what they are
+        if (!complete) await runJob({ units: srcOut ? units.map((u, i) => ({ ...u, text: srcOut[i] })) : units, saved, key, model, step, ctl, temperature: last && q.fresh ? 0.7 : 0.2,
           onBatch: (a) => (last ? send({ type: 'cues', done: saved.out.length, cues: timed(a, saved.out.length) }) : send({ type: 'pivot', total: units.length, done: saved.out.length })),
           onQueued: (ahead) => send({ type: 'queued', ahead }) });
         if (!last) srcOut = saved.out.slice(0, units.length);
@@ -502,9 +543,9 @@ export function createTranslateHandler({
   }
 
   /** Translates the units not in `saved` yet, in order, keeping progress in the cache. */
-  async function runJob({ units, saved, key, model, step, ctl, onBatch, onQueued }) {
+  async function runJob({ units, saved, key, model, step, ctl, onBatch, onQueued, temperature = 0.2 }) {
     await queue.run(async () => {
-      const tr = makeTranslator({ baseUrl, model, hostHeader, from: step.from, to: step.to, ...(chat ? { chat } : {}) });
+      const tr = makeTranslator({ baseUrl, model, hostHeader, from: step.from, to: step.to, temperature, ...(chat ? { chat } : {}) });
       // Batches are independent (their context is the source, not earlier translations), so several may run at
       // once; they still reach the browser in order: a batch that finishes early waits for the ones before it.
       const todo = batches(units).filter((b) => b[0] >= saved.out.length);

@@ -10,10 +10,13 @@
 
   let url = $state('');
   let bad = $state(false);
+  let webLink = $state(false);
   function go(e: SubmitEvent) {
     e.preventDefault();
     const id = parseVideoId(url);
     bad = !id;
+    // Another web page: Balonca does not download pages (no requests to addresses users give), so say what works.
+    webLink = !id && /^\s*https?:\/\/\S+\s*$/i.test(url);
     if (id) { app.setSetting('mode', 'video'); location.hash = watchUrl(id); }
   }
 
@@ -48,7 +51,7 @@
             <input id="home-url" type="url" inputmode="url" bind:value={url} placeholder={t('watch.url.placeholder')} aria-invalid={bad} autocomplete="off" />
             <button class="primary" type="submit">{t('home.video.cta')}</button>
           </form>
-          {#if bad}<p class="error" role="alert">{t('watch.badlink')}</p>{/if}
+          {#if bad}<p class="error" role="alert">{webLink ? t('home.webLink') : t('watch.badlink')}</p>{#if webLink}<a href={readUrl()}>{t('home.text.cta')} →</a>{/if}{/if}
           {#if app.vid}
             <a class="resume" href={watchUrl(app.vid)}>
               <img src={`https://i.ytimg.com/vi/${app.vid}/mqdefault.jpg`} alt="" width="80" height="45" loading="lazy" />

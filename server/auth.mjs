@@ -1,7 +1,7 @@
 // Accounts: invite-only sign-up, e-mail + password, 30-day sessions in an HttpOnly cookie.
 //   POST /api/auth/register {email, password, invite}   POST /api/auth/login {email, password}
 //   POST /api/auth/logout                                POST /api/auth/password {current, password}
-//   POST /api/auth/reset {token, password}               GET  /api/me
+//   POST /api/auth/reset {token, password}               GET  /api/me    DELETE /api/me {confirm: <e-mail>}
 //   GET  /api/auth/google/start[?invite=]  GET /api/auth/google/callback   (sign in with Google, see below)
 // Passwords: scrypt (N=2^15, r=8, p=1, 16-byte salt). Sessions: 32 random bytes, only their SHA-256 is stored.
 // Login answers the same for "no such user" and "wrong password".
@@ -49,7 +49,7 @@ export function parseCookies(header = '') {
  * db: the repository from db.mjs. secure: Secure cookie flag (off only for plain-HTTP tests).
  * Returns { route(req, res, url, client) -> handled?, requireUser(req) -> user | null, … }.
  */
-export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14, google = null, fetchImpl = fetch }) {
+export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14, google = null, fetchImpl = fetch, onDelete = async () => {} }) {
   const loginTries = windowCounter(15 * 60_000, 10, now);
   const googleStarts = windowCounter(15 * 60_000, 30, now);
   /** state -> {nonce, invite, at}: sign-ins with Google on their way (10 minutes, in memory). */
@@ -148,7 +148,7 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14,
     }
     if (!email) return back(res, 'google-failed'), true;
     const inv = p.invite ? db.invite(p.invite) : null;
-    if (!inv || inv.used_by || (inv.expires_at && inv.expires_at < now())) return back(res, 'need-invite'), true;
+    if (!inv || inv.used_by || inv.used_at || (inv.expires_at && inv.expires_at < now())) return back(res, 'need-invite'), true;
     let id;
     try {
       id = db.tx(() => {
@@ -165,6 +165,17 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14,
 
   async function route(req, res, url, client) {
     const p = url.pathname;
+    if (p === '/api/me' && req.method === 'DELETE') {
+      // Deleting one's own account: everything of it goes, at once. The e-mail must be typed again as confirmation.
+      const u = requireUser(req);
+      if (!u) throw new ApiError(401, 'login-required');
+      const b = await body(req);
+      if (str(b.confirm, 254).trim().toLowerCase() !== u.email.toLowerCase()) throw new ApiError(400, 'bad-confirm');
+      if (!db.deleteUser(u.id)) throw new ApiError(404, 'not-found');
+      await onDelete(u.id).catch(() => {}); // the user's own cached translations and meanings on disk
+      res.setHeader('set-cookie', cookie('', 0));
+      return json(res, 200, { ok: true }), true;
+    }
     if (p === '/api/me') {
       if (req.method !== 'GET') throw new ApiError(405, 'method');
       const u = requireUser(req);
@@ -194,7 +205,7 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14,
       if (!EMAIL_RE.test(email)) throw new ApiError(400, 'bad-email');
       if (password.length < PASSWORD_MIN) throw new ApiError(400, 'short-password');
       const inv = code ? db.invite(code) : null;
-      if (!inv || inv.used_by || (inv.expires_at && inv.expires_at < now())) throw new ApiError(400, 'bad-invite');
+      if (!inv || inv.used_by || inv.used_at || (inv.expires_at && inv.expires_at < now())) throw new ApiError(400, 'bad-invite');
       if (db.userByEmail(email)) throw new ApiError(409, 'email-taken');
       const hash = await hashPassword(password);
       const id = db.tx(() => {
@@ -242,9 +253,9 @@ export function createAuth({ db, now = Date.now, secure = true, inviteDays = 14,
   return {
     route, requireUser,
     /** A new invite code (128 random bits), valid for `inviteDays`. */
-    createInvite(byUserId = null) {
+    createInvite(byUserId = null, days = inviteDays) {
       const code = newToken(16);
-      db.createInvite(code, byUserId, now(), now() + inviteDays * 86_400_000);
+      db.createInvite(code, byUserId, now(), now() + days * 86_400_000);
       return code;
     },
     /** A one-time password reset token, valid for an hour (the admin hands the link over). */

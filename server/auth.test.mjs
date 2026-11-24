@@ -213,3 +213,24 @@ describe('sign in with Google', () => {
     s.close();
   });
 });
+
+describe('deleting an account', () => {
+  it('needs the e-mail as confirmation, removes everything of the user, keeps the invite used', async () => {
+    const s = server();
+    const code = s.auth.createInvite();
+    const a = s.browser();
+    await a.call('/api/auth/register', { email: 'weg@example.com', password: 'long enough pw', invite: code });
+    await a.call('/api/sync', { words: [{ id: 'nl:huis', lang: 'nl', updatedAt: Date.now(), data: { w: 'huis' } }],
+      library: [{ id: 'doc1', kind: 'text', body: 'Mijn huis.', meta: { lang: 'nl' }, createdAt: 1, updatedAt: Date.now() }] });
+    const id = s.db.userByEmail('weg@example.com').id;
+    expect((await a.call('/api/me', { confirm: 'other@example.com' }, 'DELETE')).body).toEqual({ error: 'bad-confirm' });
+    expect((await a.call('/api/me', { confirm: 'WEG@example.com' }, 'DELETE')).status).toBe(200);
+    expect(s.db.userById(id)).toBeNull();
+    expect(s.db.savedWord(id, 'nl:huis')).toBeNull();
+    expect(s.db.libraryItem(id, 'doc1')).toBeNull();
+    expect((await a.call('/api/me')).status).toBe(401);
+    // the invite does not come back to life
+    expect((await s.browser().call('/api/auth/register', { email: 'x@example.com', password: 'long enough pw', invite: code })).body).toEqual({ error: 'bad-invite' });
+    s.close();
+  });
+});

@@ -17,14 +17,14 @@ export type ServerEvent =
 const CODES: Record<string, TranslateError['code']> = {
   'rate-limit': 'rate-limit', busy: 'busy', cancelled: 'cancelled', 'bad-request': 'bad-response',
   'llm-unreachable': 'unavailable', 'llm-model-missing': 'unavailable', 'llm-failed': 'api', 'llm-bad-response': 'bad-response',
-  timeout: 'api', 'no-subs': 'unavailable', 'not-in-library': 'unavailable', 'login-required': 'unavailable',
+  timeout: 'api', 'retranslate-limit': 'rate-limit', 'no-subs': 'unavailable', 'not-in-library': 'unavailable', 'login-required': 'unavailable',
 };
 
 /**
  * What the server translates (it reads the text itself, phase 2): a YouTube subtitle, or a text of the user's
  * library (synced to the account first).
  */
-export type TranslateSource = { v: string; code: string; kind: 'auto' | 'manual' } | { libraryId: string };
+export type TranslateSource = { v: string; code: string; kind: 'auto' | 'manual'; fresh?: boolean } | { libraryId: string };
 
 /**
  * A translated line that holds pieces of the model's JSON (`It's just a ditch.”, “2”:”What…`). Older server

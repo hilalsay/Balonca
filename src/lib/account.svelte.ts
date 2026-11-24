@@ -7,7 +7,7 @@ export const BASE = (import.meta.env.VITE_SUBS_API as string | undefined) ?? '/a
 export interface Me { email: string; displayName: string | null; isAdmin: boolean }
 export type AccountStatus = 'unknown' | 'off' | 'out' | 'in';
 export type AuthError = 'bad-login' | 'bad-email' | 'short-password' | 'bad-invite' | 'email-taken' | 'bad-reset' | 'rate-limit' | 'network' | 'failed'
-  | 'need-invite' | 'google-failed' | 'google-cancelled'; // the last three come back from Google in the address (?hata=)
+  | 'need-invite' | 'google-failed' | 'google-cancelled' | 'bad-confirm'; // the last three come back from Google in the address (?hata=)
 
 class Account {
   status = $state<AccountStatus>('unknown');
@@ -45,6 +45,18 @@ class Account {
   async register(email: string, password: string, invite: string) { this.signedIn(await this.post('/auth/register', { email, password, invite }) as Me); }
   async reset(token: string, password: string) { this.signedIn(await this.post('/auth/reset', { token, password }) as Me); }
   async changePassword(current: string, password: string) { await this.post('/auth/password', { current, password }); }
+  /** Deletes the account and all its data on the server; `confirm` is the account's e-mail typed again. */
+  async deleteAccount(confirm: string) {
+    let r: Response;
+    try {
+      r = await fetch(`${BASE}/me`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm }) });
+    } catch { throw new AccountError('network'); }
+    if (!r.ok) {
+      const j = (await r.json().catch(() => null)) as { error?: string } | null;
+      throw new AccountError(j?.error === 'bad-confirm' ? 'bad-confirm' : 'failed');
+    }
+    this.me = null; this.status = 'out';
+  }
   async logout() {
     await this.post('/auth/logout', {}).catch(() => {});
     this.me = null; this.status = 'out';
