@@ -9,7 +9,24 @@ import { norm, parseRef } from './sources.mjs';
 import { chatStream, diskCache, languageName, modelFor, readBody } from './translate.mjs';
 
 const UA = 'Balonca/0.1 (subtitle language-learning app)';
-const MAX_SENSES = 8;
+const MAX_SENSES = 10;
+
+/**
+ * At most `max` senses, taken in turn from each part of speech (first noun, first adjective, first adverb, second noun…)
+ * and kept in Wiktionary's order: a word with many noun senses still keeps its adverb (Dutch "net": "just now").
+ */
+export function balancedSenses(senses, max = MAX_SENSES) {
+  if (senses.length <= max) return senses;
+  const groups = new Map();
+  senses.forEach((s, i) => { if (!groups.has(s.pos)) groups.set(s.pos, []); groups.get(s.pos).push(i); });
+  const keep = new Set();
+  for (let round = 0; keep.size < max; round++) {
+    let added = false;
+    for (const list of groups.values()) if (list[round] !== undefined && keep.size < max) { keep.add(list[round]); added = true; }
+    if (!added) break;
+  }
+  return senses.filter((_, i) => keep.has(i));
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Wiktionary (en.wiktionary.org REST: English glosses for words of almost every language)
@@ -96,7 +113,7 @@ export async function lookup(word, lang, { fetchImpl = fetch, signal } = {}) {
   // No real meanings of its own (only "form of"): the lemma is the word to learn.
   const lemma = own.senses.length || !own.lemmas.length ? first.word : own.lemmas[0];
   // A page without an entry in this language is as good as missing.
-  return { senses: senses.slice(0, MAX_SENSES), lemma, missing: !senses.length };
+  return { senses: balancedSenses(senses), lemma, missing: !senses.length };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -278,7 +295,7 @@ export function createDefineHandler({ llm, cacheDir = '', chat, fetchImpl, dicti
     // of them this sentence uses (a small call, cached per sentence; a user's own sentence under that user only).
     const models = [llm.model, ...(llm.models?.[q.to] ? [llm.models[q.to]] : [])];
     const hash = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 32);
-    const baseKey = 'm1-' + hash([...models, q.word.toLocaleLowerCase(q.lang), q.lang, q.to]);
+    const baseKey = 'm2-' + hash([...models, q.word.toLocaleLowerCase(q.lang), q.lang, q.to]);
     const ctl = new AbortController();
     res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
     const opts = { llm, signal: ctl.signal, ...(chat ? { chat } : {}), ...(fetchImpl ? { fetchImpl } : {}) };

@@ -201,3 +201,15 @@ describe('dictionary first', () => {
     expect(calls).toBe(0);
   });
 });
+
+describe('balancedSenses', () => {
+  it('keeps every part of speech when there are too many senses', async () => {
+    const { balancedSenses } = await import('./define.mjs');
+    const s = [...Array(5).fill('noun'), 'adjective', 'adjective', 'adverb', 'adverb', 'adverb', 'adverb'].map((pos, i) => ({ pos, gloss: `g${i}` }));
+    const out = balancedSenses(s, 10);
+    expect(out).toHaveLength(10);
+    expect(out.filter((x) => x.pos === 'adverb')).toHaveLength(4); // "just now" (the last one) is kept
+    expect(out.map((x) => x.gloss)).toEqual(['g0', 'g1', 'g2', 'g3', 'g5', 'g6', 'g7', 'g8', 'g9', 'g10']); // Wiktionary order
+    expect(balancedSenses(s.slice(0, 3), 10)).toHaveLength(3);
+  });
+});
