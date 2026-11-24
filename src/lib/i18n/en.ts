@@ -473,6 +473,7 @@ export const en: Record<MessageKey, string> = {
   'gr.err.rate': 'Too many requests in a short time. Try again in a moment.',
   'gr.unsupported': 'No grammar for {lang} yet. For now: Dutch, English, German, French and Spanish.',
   'gr.auto': 'This is worked out automatically from the sentence; once in a while it can be wrong.',
+  'gr.aiNote': 'AI note',
   'read.set.voice': 'Voice',
   'read.set.voice.server': 'Balonca voice',
   'read.set.voice.device': 'Device voice',

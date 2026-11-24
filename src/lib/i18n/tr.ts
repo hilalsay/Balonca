@@ -471,6 +471,7 @@ export const tr = {
   'gr.err.rate': 'Kısa sürede çok istek geldi. Biraz sonra tekrar dene.',
   'gr.unsupported': '{lang} için gramer açıklaması henüz yok. Şimdilik: Felemenkçe, İngilizce, Almanca, Fransızca ve İspanyolca.',
   'gr.auto': 'Bu açıklama cümlenin otomatik çözümlemesinden çıkarılır; nadiren yanılabilir.',
+  'gr.aiNote': 'Yapay zekâ notu',
   'read.set.voice': 'Ses',
   'read.set.voice.server': 'Balonca sesi',
   'read.set.voice.device': 'Cihazın sesi',

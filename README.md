@@ -152,6 +152,13 @@ Provider settings (in `/etc/balonca.env` or `.env`, never in the repository): `L
 to Ollama for the rest of the day), `LLM_PRICE_IN` / `LLM_PRICE_OUT`. Tinker answers 429/5xx are retried three
 times, then Ollama answers; once the credit is gone (402/403) Tinker is asked again only once an hour.
 
+Grammar by the model (`grammar-llm.md`): `GRAMMAR_ENGINE=model|parser` (default `parser`). With `model`, the sentence a
+reader opens in the grammar panel (Dutch and English) is labelled by the model; the explanations stay the hand-written
+templates, and its only free text is a short "AI note". The parser and its rules answer whenever the provider is not
+Tinker, `GRAMMAR_DAILY_BUDGET_USD` (2) is used up, the call fails or the answer fails validation. Answers are cached in
+`GRAMMAR_CACHE_DIR` (`.cache/grammar/`): shared for videos and the sample texts, per user for their own texts. The admin
+page shows how often each engine answered and why. Compare the engines with `npm run grammar:compare`.
+
 Environment: `OLLAMA_URL` (default `http://127.0.0.1:11434`, `off` disables translation), `OLLAMA_MODEL`
 (default `gemma3:latest`), `OLLAMA_HOST_HEADER` (only if your Ollama checks the `Host` header),
 `TRANSLATE_CACHE_DIR`, `TRANSLATE_JOBS_PER_HOUR`. `/api/health` reports whether the model is reachable.

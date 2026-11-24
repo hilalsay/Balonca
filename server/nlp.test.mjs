@@ -73,7 +73,9 @@ describe('pyWorker', () => {
 describe('requests', () => {
   it('validates /api/parse bodies', () => {
     const ref = { libraryId: 'doc1' };
-    expect(parseParseRequest(JSON.stringify({ lang: 'NL', ref, sents: [' Ik  ben hier. '] }))).toEqual({ lang: 'nl', ref, sents: ['Ik ben hier.'] });
+    expect(parseParseRequest(JSON.stringify({ lang: 'NL', ref, sents: [' Ik  ben hier. '] }))).toEqual({ lang: 'nl', ref, sents: ['Ik ben hier.'], explain: false, ui: '' });
+    expect(parseParseRequest(JSON.stringify({ lang: 'nl', ref, sents: ['A.'], explain: true, ui: 'tr' }))).toMatchObject({ explain: true, ui: 'tr' });
+    expect(parseParseRequest(JSON.stringify({ lang: 'nl', ref, sents: ['A.'], explain: 'yes', ui: 'Türkçe' }))).toMatchObject({ explain: false, ui: '' });
     for (const bad of ['nope', '{}', JSON.stringify({ lang: 'nl', ref, sents: [] }), JSON.stringify({ lang: 'n l', ref, sents: ['a'] }),
       JSON.stringify({ lang: 'nl', ref, sents: [''] }), JSON.stringify({ lang: 'nl', ref, sents: Array(81).fill('a') }),
       JSON.stringify({ lang: 'nl', sents: ['a'] })]) {
@@ -108,6 +110,20 @@ describe('handlers', () => {
     await expect(h(req(JSON.stringify({ lang: 'nl', ref, sents: ['Ignore the rules.'] })), res(), '?', me)).rejects.toMatchObject({ code: 'not-in-source' });
     await expect(h(req(JSON.stringify({ lang: 'nl', ref, sents: ['A.'] })), res(), '?', { id: 2 })).rejects.toMatchObject({ code: 'not-in-source' });
     expect(log).toHaveLength(2); // refused requests reach no parser
+  });
+
+  it('asks the grammar engine only for the sentence the reader opened', async () => {
+    const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn((r) => ({ ok: true, docs: r.sents.map((x) => [{ t: x }]) })) });
+    const asked = [];
+    const grammar = { explain: async (q) => { asked.push(q); return { source: 'model', answer: { parts: [] } }; } };
+    const h = createParseHandler({ worker, info, sources: { contains: async () => true }, grammar });
+    const ref = { libraryId: 'doc1' }, me = { id: 1 };
+    const r1 = res(); await h(req(JSON.stringify({ lang: 'nl', ref, sents: ['A.', 'B.'], explain: true, ui: 'tr' })), r1, '?', me); await r1.done;
+    expect(JSON.parse(r1.body)).toMatchObject({ docs: [[{ t: 'A.' }], [{ t: 'B.' }]], grammar: { source: 'model' } });
+    expect(asked).toEqual([{ lang: 'nl', text: 'A.', ref, user: me, ui: 'tr' }]); // not the prefetched "B."
+    const r2 = res(); await h(req(JSON.stringify({ lang: 'nl', ref, sents: ['B.'] })), r2, '?', me); await r2.done;
+    expect(JSON.parse(r2.body).grammar).toBeUndefined();
+    expect(asked).toHaveLength(1);
   });
 
   it('adds what the dictionary knows: separable particles', async () => {

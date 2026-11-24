@@ -60,14 +60,14 @@ export const tokens = (u = {}) => ({
 export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), random = Math.random } = {}) {
   const useTinker = cfg.provider === 'tinker' && !!cfg.tinker?.key;
   const slot = semaphore(useTinker ? (cfg.concurrency ?? 16) : 1000, 2000);
-  const spent = { day: dayOf(now()), usd: 0, calls: 0, fallbacks: 0, input: 0, output: 0 };
+  const spent = { day: dayOf(now()), usd: 0, calls: 0, fallbacks: 0, input: 0, output: 0, byPurpose: {} };
   const thinkers = new Set(); // models that cannot switch thinking off
   let creditGoneUntil = 0; // after 402/403: Tinker is not asked again for an hour
   let lastError = '';
   const loaded = loadSpent(cfg.usageDir, spent);
 
   function dayOf(t) { return new Date(t).toISOString().slice(0, 10); }
-  function rollDay() { const d = dayOf(now()); if (d !== spent.day) Object.assign(spent, { day: d, usd: 0, calls: 0, fallbacks: 0, input: 0, output: 0 }); }
+  function rollDay() { const d = dayOf(now()); if (d !== spent.day) Object.assign(spent, { day: d, usd: 0, calls: 0, fallbacks: 0, input: 0, output: 0, byPurpose: {} }); }
   const overBudget = () => cfg.dailyBudgetUsd > 0 && spent.usd >= cfg.dailyBudgetUsd;
 
   /** The model that writes `to` (Tinker: TINKER_MODEL_<LANG> or TINKER_MODEL; Ollama: its own setting). */
@@ -102,6 +102,7 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
         const t = tokens(data.usage);
         const usd = (t.input * (cfg.priceIn ?? 0) + t.output * (cfg.priceOut ?? 0)) / 1e6;
         rollDay(); spent.usd += usd; spent.calls++; spent.input += t.input; spent.output += t.output;
+        spent.byPurpose[purpose] = (spent.byPurpose[purpose] ?? 0) + usd;
         void record(cfg.usageDir, { at: now(), provider: 'tinker', model: req.model, purpose, input: t.input, output: t.output, usd });
         return { status: 200, content: fromAnthropic(data) };
       }
@@ -144,15 +145,20 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
     }
   }
 
+  /**
+   * `opts.noFallback`: never hand this call to the local model; throw instead (the caller has its own fallback,
+   * e.g. the grammar parser).
+   */
   async function chat(url, body, opts = {}, purpose = 'chat') {
     rollDay();
     await loaded;
     const tinkerUsable = useTinker && now() >= creditGoneUntil && !overBudget();
+    if (opts.noFallback && !tinkerUsable) throw new ApiError(503, !useTinker ? 'llm-local' : overBudget() ? 'budget' : 'llm-credit');
     if (tinkerUsable) {
       try { return await slot(() => tinker(body, opts.signal, purpose)); }
       catch (e) {
         if (e instanceof ApiError && e.code === 'cancelled') throw e;
-        if (cfg.fallback === 'off') throw e;
+        if (cfg.fallback === 'off' || opts.noFallback) throw e;
         spent.fallbacks++;
         const store = llmContext.getStore();
         if (store) store.fallback = true;
@@ -179,7 +185,10 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
     };
   }
 
-  return { chat, model, status, useTinker };
+  /** Dollars spent today on calls made for `purpose` (e.g. 'grammar', which has its own daily cap). */
+  const spentToday = async (purpose) => { await loaded; rollDay(); return spent.byPurpose[purpose] ?? 0; };
+
+  return { chat, model, status, useTinker, spentToday };
 }
 
 // Usage log: one JSON line per paid call (until the database of phase 1 takes over). No text, only counts.
@@ -197,7 +206,10 @@ async function loadSpent(dir, spent) {
     for (const line of text.split('\n')) {
       if (!line) continue;
       const r = JSON.parse(line);
-      if (new Date(r.at).toISOString().slice(0, 10) === spent.day) { spent.usd += r.usd ?? 0; spent.calls++; spent.input += r.input ?? 0; spent.output += r.output ?? 0; }
+      if (new Date(r.at).toISOString().slice(0, 10) === spent.day) {
+        spent.usd += r.usd ?? 0; spent.calls++; spent.input += r.input ?? 0; spent.output += r.output ?? 0;
+        if (r.purpose) spent.byPurpose[r.purpose] = (spent.byPurpose[r.purpose] ?? 0) + (r.usd ?? 0);
+      }
     }
   } catch {}
 }

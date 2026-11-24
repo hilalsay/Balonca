@@ -8,8 +8,9 @@
   import { t, i18n } from '../../lib/i18n/index.svelte';
   import { langName } from '../../lib/languages';
   import { speech } from '../../lib/read/speech.svelte';
-  import { nlpInfo, parseSentences, GrammarError } from '../../lib/read/api';
+  import { nlpInfo, grammarFor, GrammarError } from '../../lib/read/api';
   import { analyze, type Analysis } from '../../lib/read/grammar';
+  import { toAnalysis } from '../../lib/read/grammar-model';
   import { translateOne, viaEnglish, PIVOT, SentenceError } from '../../lib/read/translate.svelte';
   import type { Sentence } from '../../lib/read/text';
   import type { TextDoc } from '../../lib/types';
@@ -41,19 +42,25 @@
 
   // Grammar (parsed on the server, explained here)
   let gram = $state<Analysis | null>(null), grBusy = $state(false), grErr = $state<string | null>(null), grRetry = $state(0);
+  let nuance = $state(''); // the model's short note (only when the model labelled the sentence)
   let canParse = $state<boolean | null>(null);
   $effect(() => { const l = doc.lang; void nlpInfo().then((x) => { if (doc.lang === l) canParse = x.parse.includes(l); }); });
   $effect(() => {
     const idx = i, text = s?.text, ok = canParse;
     void grRetry;
-    gram = null; grErr = null;
+    gram = null; grErr = null; nuance = '';
     if (!text || !ok) { grBusy = false; return; }
     const ctl = new AbortController();
     grBusy = true;
     // The next sentence too, so stepping on is instant.
     const next = sents[idx + 1]?.text;
-    parseSentences(doc.lang, next ? [text, next] : [text], { signal: ctl.signal, ref: { libraryId: doc.id } })
-      .then(([toks]) => { if (!ctl.signal.aborted) gram = analyze(toks, doc.lang); })
+    // Only the opened sentence may go to the model (server/grammar.mjs); the next one is parsed only.
+    grammarFor(doc.lang, next ? [text, next] : [text], { signal: ctl.signal, ref: { libraryId: doc.id }, explain: true, ui: i18n.locale })
+      .then(({ docs: [toks], grammar }) => {
+        if (ctl.signal.aborted) return;
+        if (grammar?.source === 'model') { gram = toAnalysis(grammar.answer, toks, doc.lang); nuance = grammar.answer.nuance ?? ''; }
+        else gram = analyze(toks, doc.lang);
+      })
       .catch((e) => { if (!ctl.signal.aborted) grErr = e instanceof GrammarError && e.code === 'rate-limit' ? 'gr.err.rate' : 'gr.err'; })
       .finally(() => { if (!ctl.signal.aborted) grBusy = false; });
     return () => ctl.abort();
@@ -104,6 +111,7 @@
         <p class="muted">{t('gr.unsupported', { lang: langName(doc.lang, i18n.locale) })}</p>
       {:else if gram}
         <GrammarView a={gram} />
+        {#if nuance}<p class="nuance"><span class="ai">{t('gr.aiNote')}</span> {nuance}</p>{/if}
         <p class="auto muted">{t('gr.auto')}</p>
       {:else if grErr}
         <p class="err" role="alert">{t(grErr as 'gr.err')} <button class="link" onclick={() => grRetry++}>{t('trans.retry')}</button></p>
@@ -135,4 +143,6 @@
   .spin { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin 0.9s linear infinite; flex: none; }
   .link { all: unset; cursor: pointer; color: var(--accent); text-decoration: underline; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .nuance { margin: var(--space-2) 0 0; font-size: 0.92rem; }
+  .nuance .ai { font: 800 0.7rem var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1.5px solid var(--line); border-radius: 8px; padding: 1px 6px; margin-right: 4px; }
 </style>

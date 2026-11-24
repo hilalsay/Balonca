@@ -6,7 +6,7 @@
 
   const BASE = (import.meta.env.VITE_SUBS_API as string | undefined) ?? '/api';
   const TR = {
-    title: 'Yönetim', users: 'Kullanıcı', active1: 'Bugün aktif', active7: '7 günde aktif', new7: '7 günde yeni', spend: 'Bugünkü model harcaması',
+    title: 'Yönetim', users: 'Kullanıcı', active1: 'Bugün aktif', active7: '7 günde aktif', new7: '7 günde yeni', spend: 'Bugünkü model harcaması', grammar: 'Dilbilgisi: model', grammarParser: 'ayrıştırıcı', rejects: 'reddedildi',
     chart: 'Aktif dakika, son 30 gün', minutes: 'dk', people: 'kişi', table: 'Tablo olarak göster', day: 'Gün',
     invites: 'Davetler', make: 'Davet linki oluştur', valid: 'Geçerlilik', days: 'gün', copy: 'Kopyala', copied: 'Kopyalandı',
     usedBy: 'Kullanan', open: 'Geçerli', expired: 'Süresi doldu', until: 'son gün',
@@ -16,7 +16,7 @@
     confirmOff: 'Bu hesap kapatılsın mı? Hemen çıkış yapılır.',
   };
   const EN: typeof TR = {
-    title: 'Admin', users: 'Users', active1: 'Active today', active7: 'Active in 7 days', new7: 'New in 7 days', spend: 'Model spend today',
+    title: 'Admin', users: 'Users', active1: 'Active today', active7: 'Active in 7 days', new7: 'New in 7 days', spend: 'Model spend today', grammar: 'Grammar by the model', grammarParser: 'by the parser', rejects: 'rejected',
     chart: 'Active minutes, last 30 days', minutes: 'min', people: 'people', table: 'Show as a table', day: 'Day',
     invites: 'Invites', make: 'Create invite link', valid: 'Valid for', days: 'days', copy: 'Copy', copied: 'Copied',
     usedBy: 'Used by', open: 'Open', expired: 'Expired', until: 'until',
@@ -28,7 +28,9 @@
   const L = $derived(i18n.locale === 'tr' ? TR : EN);
 
   interface Day { day: string; users: number; minutes: number }
-  interface Overview { users: number; active1: number; active7: number; new7: number; days: Day[]; llm: { today?: { usd: number; budgetUsd: number } } | null }
+  interface GrammarStatus { engine: string; budgetUsd: number; spentToday: number; model: number; parser: Record<string, number>; rejects: Record<string, number> }
+  interface Overview { users: number; active1: number; active7: number; new7: number; days: Day[]; llm: { today?: { usd: number; budgetUsd: number }; grammar?: GrammarStatus } | null }
+  const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
   interface User { id: number; email: string; admin: boolean; disabled: boolean; google: boolean; created: number; lastSeen: number | null; words: number; texts: number; videos: number; minutes30: number }
   interface Invite { code: string; link: string; created: number; expires: number | null; used: number | null; usedBy: string | null }
 
@@ -105,6 +107,7 @@
         <div class="tile card"><span class="v">{overview.active7}</span><span class="k">{L.active7}</span></div>
         <div class="tile card"><span class="v">{overview.new7}</span><span class="k">{L.new7}</span></div>
         {#if overview.llm?.today}<div class="tile card"><span class="v">${overview.llm.today.usd.toFixed(2)}</span><span class="k">{L.spend} / ${overview.llm.today.budgetUsd}</span></div>{/if}
+        {#if overview.llm?.grammar?.engine === 'model'}{@const g = overview.llm.grammar}<div class="tile card" title={Object.entries(g.rejects).map(([k, n]) => `${k}: ${n}`).join(', ')}><span class="v">{g.model}</span><span class="k">{L.grammar} · {sum(g.parser)} {L.grammarParser} · {sum(g.rejects)} {L.rejects} · ${g.spentToday.toFixed(2)} / ${g.budgetUsd}</span></div>{/if}
       </div>
 
       <section class="card chart">
