@@ -10,7 +10,7 @@
 These are a starting point for `scripts/grammar-eval.mjs` in grammar-llm.md, which should add the model
 engine and the cost/latency columns.
 
-End to end: `npm run grammar:eval [-- --diff] [-- --size=lg]` (`run.mjs`) prints the spaCy/model versions, parses,
+End to end: `npm run grammar:eval [-- --diff] [-- --size=lg] [-- --dict]` (`run.mjs`) prints the spaCy/model versions, parses,
 bundles and scores basic and hard separately. Python comes from `NLP_PYTHON`, else `./pyenv/bin/python`, else `python3`;
 it needs `nl_core_news_md` and `en_core_web_md` (add a model installed elsewhere with `PYTHONPATH`).
 
@@ -22,3 +22,5 @@ Review by a person (see "Reviewing" in tests/grammar-gold/README.md):
   `<filled.csv>.to-resolve.md`); nothing in them is applied automatically.
 - Once a record is reviewed, the JSONL is the source: `build.py` refuses to rebuild (it would reset `checked_by`)
   unless given `--force`.
+`--dict` scores a second time with what the server adds from the phase 3b dictionary (verb lemmas, separable
+particles), read from `BALONCA_DB`; those numbers move while the dictionary grows, so the entry count is printed.

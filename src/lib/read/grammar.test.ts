@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fx from './ud.fixtures.json';
-import { analyze, markSeparable, toUD, type Note, type UdToken } from './grammar';
+import { analyze, markFromDictionary, toUD, type DictEntry, type Note, type UdToken } from './grammar';
 
 // Real parses from the server (spaCy), recorded once: see ud.fixtures.json.
 const parses = fx as Record<string, Record<string, UdToken[]>>;
@@ -77,14 +77,30 @@ describe('fixes found with the gold set (tests/grammar-gold)', () => {
     expect(kinds('nl', 'Als je tijd hebt, bel me even.')).toContain('imperative');
     expect(kinds('en', 'If you are tired, go to bed.')).toContain('imperative');
   });
+  // A small stand-in for the server's dictionary (form -> entry).
+  const DICT: Record<string, DictEntry> = {
+    terugkomen: { lemma: 'terugkomen', pos: 'verb', separable: true }, meegaan: { lemma: 'meegaan', pos: 'verb', separable: true },
+    dichtdoen: { lemma: 'dichtdoen', pos: 'verb', separable: true }, doe: { lemma: 'doen', pos: 'verb' },
+    herinner: { lemma: 'herinneren', pos: 'verb' }, kom: { lemma: 'kom', pos: 'noun' },
+  };
+  const withDict = (s: string, d: Record<string, DictEntry> = DICT) => analyze(markFromDictionary(parses.nl[s], 'nl', (f) => d[f]), 'nl');
   it('accepts particles such as terug and mee when the dictionary knows the separable verb', () => {
-    const dict = (inf: string) => ['terugkomen', 'meegaan'].includes(inf);
-    const sep = (s: string, d: (inf: string) => boolean) => analyze(markSeparable(parses.nl[s], 'nl', d), 'nl');
-    expect(sep('Ik kom morgen terug.', dict).notes.find((n) => n.kind === 'separable')?.p).toEqual({ verb: 'kom', prt: 'terug' });
-    expect(sep('Hij gaat vanavond mee.', dict).chunks.map((c) => `${c.role}:${c.text}`)).toContain('verbPart:mee');
+    expect(withDict('Ik kom morgen terug.').notes.find((n) => n.kind === 'separable')?.p).toEqual({ verb: 'kom', prt: 'terug' });
+    expect(withDict('Hij gaat vanavond mee.').chunks.map((c) => `${c.role}:${c.text}`)).toContain('verbPart:mee');
     // without the dictionary's word, an adverb is not taken for a particle
-    expect(sep('Ik kom morgen terug.', () => false).notes.map((n) => n.kind)).not.toContain('separable');
-    expect(markSeparable(parses.nl['Ik kom morgen terug.'], 'en', dict)).toBe(parses.nl['Ik kom morgen terug.']);
+    expect(withDict('Ik kom morgen terug.', {}).notes.map((n) => n.kind)).not.toContain('separable');
+    expect(markFromDictionary(parses.nl['Ik kom morgen terug.'], 'en', (f) => DICT[f])).toBe(parses.nl['Ik kom morgen terug.']);
+  });
+  it("uses the dictionary's lemma when the parser keeps the written form (Doe -> doen, Herinner -> herinneren)", () => {
+    const s = 'Doe het raam dicht.';
+    const { doe: _doe, ...noDoe } = DICT;
+    expect(withDict(s, noDoe).notes.map((n) => n.kind)).not.toContain('separable');
+    expect(withDict(s).notes.find((n) => n.kind === 'separable')?.p).toEqual({ verb: 'Doe', prt: 'dicht' });
+    expect(kinds('nl', 'Herinner je je die dag nog?')).not.toContain('reflexive');
+    expect(withDict('Herinner je je die dag nog?').notes.find((n) => n.kind === 'reflexive')?.p).toEqual({ pron: 'je', verb: 'Herinner' });
+    // the parser's lemma stays a candidate, and a non-verb entry adds nothing
+    const t = markFromDictionary(parses.nl['Ik kom morgen terug.'], 'nl', (f) => DICT[f]);
+    expect(t.find((x) => x.t === 'kom')?.dlemma).toBeUndefined();
   });
   it('marks me/je/ons as reflexive only with a reflexive verb and a matching subject', () => {
     expect(note('nl', 'We moeten ons haasten.', 'reflexive')?.p).toEqual({ pron: 'ons', verb: 'haasten' });
