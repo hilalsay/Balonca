@@ -69,7 +69,8 @@ what a parser happens to output.
   (`tense:perfect:zijn`, `tense:pluperfect:have`). No tense note for the main clause of a command.
 - `inversion`: main or coordinated clause where something other than the subject comes first and the
   subject follows the verb. Not for questions or commands.
-- `bracket`: finite verb in second place, a non-finite verb form at the end, something in between.
+- `bracket`: finite verb early (in second place, or first in a question), a non-finite verb form at the end,
+  something in between (*Kun je het raam dichtdoen?* has one too).
   Separable particles and `te`-infinitives do not count (they have their own notes).
 - `verbFinal`: subordinate or relative clause with the finite verb at the end and at least two words
   (not counting the conjunction) before it.
