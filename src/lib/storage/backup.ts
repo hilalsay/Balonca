@@ -36,7 +36,7 @@ export async function exportBackup(db: Db): Promise<Backup> {
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-function cleanWord(x: any): SavedWord | null {
+export function cleanWord(x: any): SavedWord | null {
   if (!x || !isStr(x.w) || !isStr(x.lang) || !x.w || !x.lang) return null;
   return {
     id: `${x.lang}:${x.w}`, w: x.w, lang: x.lang, ctx: isStr(x.ctx) ? x.ctx : '',

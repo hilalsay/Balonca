@@ -14,6 +14,9 @@ import { createLlm, TINKER_DEFAULT_URL } from './llm/index.mjs';
 import { createDefineHandler } from './define.mjs';
 import { createSentenceHandler } from './sentence.mjs';
 import { createYouTube } from './youtube.mjs';
+import { openDb } from './db.mjs';
+import { createAuth } from './auth.mjs';
+import { createSync } from './sync.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -85,7 +88,15 @@ const ytLimits = Object.fromEntries(Object.entries({
 }).filter(([, v]) => v).map(([k, v]) => [k, Number(v)]));
 const youtube = createYouTube({ run, cacheDir: process.env.YT_CACHE_DIR ?? fileURLToPath(new URL('../.cache/yt', import.meta.url)), limits: ytLimits });
 
+// Accounts (AUTH=on): every route but health needs a signed-in user. The database lives next to server/ (not in it:
+// deploys replace server/). Off by default, so turning it on is a decision.
+const db = openDb(env.BALONCA_DB ?? fileURLToPath(new URL('../data/balonca.db', import.meta.url)));
+const accounts = env.AUTH === 'on' ? createAuth({ db, secure: env.COOKIE_SECURE !== '0' }) : null;
+console.log(`accounts: ${accounts ? 'on (sign-in required)' : 'off'}`);
+
 const handler = createHandler({
+  auth: accounts,
+  sync: accounts ? createSync({ db }) : null,
   youtube,
   parse: parseWorker ? createParseHandler({ worker: parseWorker, info }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).

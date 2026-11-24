@@ -10,6 +10,8 @@
   import Login from './routes/Login.svelte';
   import { router, PUBLIC_ROUTES } from './lib/router.svelte';
   import { account } from './lib/account.svelte';
+  import { sync } from './lib/sync.svelte';
+  import ImportAsk from './components/ImportAsk.svelte';
   import { app } from './lib/state.svelte';
   import { t } from './lib/i18n/index.svelte';
   import type { Component } from 'svelte';
@@ -50,6 +52,7 @@
   const gated = $derived(account.status === 'out' && !signIn);
   $effect(() => { if (gated) { try { sessionStorage.setItem('balonca.afterLogin', location.hash); } catch {} } });
   $effect(() => { if (account.status === 'in' && signIn) location.hash = '#/'; });
+  $effect(() => { if (app.ready && account.status === 'in') void sync.start(); });
   const Page = $derived(signIn || gated ? Login : router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 
@@ -72,6 +75,7 @@
 <BottomNav />
 <Tour />
 <Toasts />
+<ImportAsk />
 
 <style>
   main { max-width: 1200px; margin: 0 auto; padding: var(--space-4); outline: none; min-height: 70dvh; }

@@ -51,3 +51,15 @@ export class AccountError extends Error {
 }
 
 export const account = new Account();
+
+// Accounts can be switched on while a tab is open: look again when the tab comes back, and whenever the server
+// answers "login-required".
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && account.status !== 'in') void account.check(); });
+  const orig = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = async (...a: Parameters<typeof fetch>) => {
+    const r = await orig(...a);
+    if (r.status === 401 && account.status !== 'out' && String(a[0]).includes('/api/') && !String(a[0]).includes('/api/me')) void account.check();
+    return r;
+  };
+}
