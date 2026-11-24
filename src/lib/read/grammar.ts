@@ -15,6 +15,7 @@ export interface UdToken {
   head: number; // index of the head word in the sentence (itself for the root)
   lemma: string;
   morph: string; // "Tense=Past|VerbForm=Fin"
+  sep?: boolean; // set by the server: a particle the dictionary confirms as part of a separable verb (markSeparable)
 }
 
 export type Role = 'subject' | 'verb' | 'verbPart' | 'object' | 'indirect' | 'complement' | 'adverbial' | 'link' | 'negation' | 'punct' | 'other';
@@ -58,6 +59,13 @@ const WH: Record<string, string[]> = {
   es: L('qué quién quiénes dónde cuándo cómo cuál cuáles cuánto cuánta cuántos cuántas adónde'),
 };
 const TE: Record<string, string[]> = { nl: ['te'], de: ['zu'], en: ['to'] };
+/** Verbs used with a reflexive pronoun (zich haasten, zich herinneren…). Only these make me/je/ons reflexive:
+ *  the pronoun alone says nothing ("Ik zie je"). Infinitives, separable ones with their particle (afvragen). */
+const REFLEXIVE_VERBS: Record<string, string[]> = {
+  nl: L('haasten herinneren vergissen schamen gedragen afvragen bemoeien realiseren verbazen ergeren vervelen verheugen verslapen bevinden verontschuldigen concentreren voelen voorstellen'),
+};
+/** Reflexive pronoun forms and their person (me/je/ons are also ordinary object pronouns). */
+const REFLEXIVE_PRON: Record<string, Record<string, string>> = { nl: { me: '1', je: '2', ons: '1', zich: '3' } };
 /** Verb-second languages: the finite verb is the 2nd part of a main clause, and goes last in a subordinate one. */
 const V2 = new Set(['nl', 'de']);
 
@@ -112,6 +120,7 @@ export function toUD(input: UdToken[], lang: string): UdToken[] {
   if (lang === 'en') {
     tokens.forEach((x) => {
       if (x.dep === 'prep') x.dep = verbal(tokens[x.head] ?? x) ? 'obl' : 'nmod';
+      else if (x.dep === 'aux' && x.pos === 'PART' && low(x.t) === 'to') x.dep = 'mark'; // infinitive "to", as Dutch "te"
       else x.dep = EN[x.dep] ?? x.dep;
     });
   }
@@ -219,10 +228,10 @@ export function analyze(parsed: UdToken[], lang: string): Analysis {
     if (b === 'nsubj' || b === 'csubj' || (b === 'expl' && d !== 'expl:pv')) role[i] = 'subject';
     else if (d === 'pred') role[i] = 'complement';
     else if (b === 'obj') role[i] = 'object';
-    else if (b === 'iobj') role[i] = kids[H].some((k) => base(tokens[k].dep) === 'obj') ? 'indirect' : 'object';
+    else if (b === 'iobj') role[i] = kids[H].some((k) => base(tokens[k].dep) === 'obj') && !reflexiveOf(tokens, kids, i, lang) ? 'indirect' : 'object';
     else if (d === 'expl:pv') role[i] = 'object';
     else if (b === 'aux' || d === 'cop') role[i] = finite(x) ? 'verb' : 'verbPart';
-    else if (d === 'compound:prt') role[i] = x.pos === 'ADP' || x.pos === 'PART' ? 'verbPart' : 'adverbial';
+    else if (d === 'compound:prt') role[i] = isParticle(x) ? 'verbPart' : 'adverbial';
     else if ((b === 'mark' || b === 'cc') && verbal(x) && c === i) role[i] = finite(x) ? 'verb' : 'verbPart'; // "Kun je…": a verb taken for a conjunction
     else if (b === 'mark' || b === 'cc') role[i] = 'link';
     else if (b === 'obl' || b === 'advmod' || b === 'nmod' && verbal(tokens[H]) || b === 'npadvmod' || b === 'advcl' || d === 'obl:agent') role[i] = 'adverbial';
@@ -273,6 +282,16 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
   const mainWords = words(main);
   const firstWord = mainWords.find((i) => cx.role[i] !== 'punct' && !(i === 0 && tokens[i].t === '¿'));
   const hasSubject = (c: number) => words(c).some((i) => cx.role[i] === 'subject');
+  // The subject is a whole clause, so the verb that comes first is no command: "Toen …, bleek dat iemand …"
+  // (a clause hanging from the verb as subject), "Wie niet werkt, zal …", "Wat ik niet begrijp, is …" (a clause in
+  // front that starts with a question or relative word and no conjunction; the parser may hang it anywhere).
+  const clauseSubject = () => {
+    const head = a.clauses[main]?.head;
+    if (head !== undefined && cx.kids[head].some((k) => base(tokens[k].dep) === 'csubj')) return true;
+    const s = tokens.findIndex((_, i) => cx.role[i] !== 'punct');
+    return firstWord !== undefined && s >= 0 && s < firstWord && cx.clauseIdx[s] !== main && cx.role[s] !== 'link'
+      && (inList(WH[lang], tokens[s]) || ['Int', 'Rel'].includes(feats(tokens[s]).PronType));
+  };
 
   // Questions and commands (main clause)
   let mood: 'question' | 'wh' | 'imperative' | null = null;
@@ -281,7 +300,7 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
     const wh = inList(WH[lang], f) || feats(f).PronType === 'Int';
     if (question && wh) { mood = 'wh'; const v = mainWords.find((i) => cx.role[i] === 'verb'); add('whQuestion', main, [firstWord, ...(v !== undefined ? [v] : [])], { wh: f.t, verb: v !== undefined ? tokens[v].t : '' }); }
     else if (question && verbal(f) && finite(f)) { mood = 'question'; add('question', main, [firstWord], { verb: f.t }); }
-    else if (!question && verbal(f) && (feats(f).Mood === 'Imp' || (!hasSubject(main) && (finite(f) || (lang === 'en' && feats(f).VerbForm === 'Inf'))))) {
+    else if (!question && verbal(f) && !clauseSubject() && (feats(f).Mood === 'Imp' || (!hasSubject(main) && (finite(f) || (lang === 'en' && feats(f).VerbForm === 'Inf'))))) {
       mood = 'imperative'; add('imperative', main, [firstWord], { verb: f.t });
     }
   }
@@ -359,7 +378,7 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
       // Separable verbs: the particle is split off and stands at the end
       for (const i of ws) {
         const x = tokens[i];
-        if (x.dep === 'compound:prt' && (x.pos === 'ADP' || x.pos === 'PART') && x.head < i) add('separable', cl.id, [x.head, i], { verb: tokens[x.head].t, prt: x.t });
+        if (x.dep === 'compound:prt' && isParticle(x) && x.head < i) add('separable', cl.id, [x.head, i], { verb: tokens[x.head].t, prt: x.t });
       }
     }
 
@@ -369,9 +388,9 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
       const noun = tokens[cl.head].head;
       if (pron !== undefined && noun !== cl.head) add('relative', cl.id, [pron, noun], { pron: tokens[pron].t, noun: tokens[noun].t });
     }
-    // te/zu/to + infinitive
+    // te/zu/to + infinitive: completing a verb (xcomp), or as a clause of its own ("om … te", "to play" = in order to)
     for (const i of ws) {
-      if (tokens[i].dep !== 'xcomp') continue;
+      if (tokens[i].dep !== 'xcomp' && !(verbal(tokens[i]) && feats(tokens[i]).VerbForm === 'Inf')) continue;
       const te = cx.kids[i].find((k) => tokens[k].dep === 'mark' && inList(TE[lang], tokens[k]));
       if (te !== undefined) add('teInf', cl.id, [te, i], { te: tokens[te].t, verb: tokens[i].t, main: tokens[tokens[i].head].t });
     }
@@ -387,7 +406,7 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
   }
   tokens.forEach((x, i) => {
     const f = feats(x);
-    if (f.Reflex === 'Yes' && x.pos === 'PRON' && verbal(tokens[x.head])) add('reflexive', cx.clauseIdx[i], [i, x.head], { pron: x.t, verb: tokens[x.head].t });
+    if ((f.Reflex === 'Yes' && x.pos === 'PRON' && verbal(tokens[x.head])) || reflexiveOf(tokens, cx.kids, i, lang)) add('reflexive', cx.clauseIdx[i], [i, x.head], { pron: x.t, verb: tokens[x.head].t });
     if ((x.pos === 'ADJ' || x.pos === 'ADV') && (f.Degree === 'Cmp' || f.Degree === 'Sup')) add('degree', cx.clauseIdx[i], [i], { word: x.t, base: x.lemma, kind: f.Degree === 'Cmp' ? 'cmp' : 'sup' });
   });
   if (lang === 'nl' || lang === 'de') {
@@ -426,6 +445,43 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
 
   const ORDER: NoteKind[] = ['question', 'whQuestion', 'imperative', 'tense', 'inversion', 'bracket', 'verbFinal', 'separable', 'modal', 'passive', 'teInf', 'relative', 'negation', 'reflexive', 'degree', 'articles'];
   return notes.sort((x, y) => ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind) || x.clause - y.clause);
+}
+
+/** A separable verb's particle: a preposition or particle (op, aan), or another word (terug, dicht, mee) when the
+ *  server has confirmed the verb in the dictionary (`sep`). */
+const isParticle = (x: UdToken) => x.pos === 'ADP' || x.pos === 'PART' || x.sep === true;
+
+/** Infinitive of the verb at `v`, with its split-off particle in front (vraag … af -> afvragen). */
+function infinitive(tokens: UdToken[], kids: number[][], v: number): string {
+  const lemma = low(tokens[v].lemma);
+  const prt = kids[v].map((k) => tokens[k]).find((k) => k.dep === 'compound:prt');
+  return prt && !lemma.startsWith(low(prt.t)) ? low(prt.t) + lemma : lemma;
+}
+
+/** True for me/je/ons/zich as the object of a verb from REFLEXIVE_VERBS, in the same person as its subject
+ *  ("Ik kan me … herinneren", but not "Ik herinner je aan …"). */
+function reflexiveOf(tokens: UdToken[], kids: number[][], i: number, lang: string): boolean {
+  const x = tokens[i], person = REFLEXIVE_PRON[lang]?.[low(x.t)], v = x.head;
+  if (!person || x.pos !== 'PRON' || !['obj', 'iobj', 'expl'].includes(base(x.dep)) || !tokens[v] || !verbal(tokens[v])) return false;
+  if (!REFLEXIVE_VERBS[lang]?.includes(infinitive(tokens, kids, v))) return false;
+  const subj = kids[v].map((k) => tokens[k]).find((k) => base(k.dep) === 'nsubj');
+  const sp = subj && feats(subj).Person;
+  return !sp || sp === person;
+}
+
+/**
+ * Marks particles the parser does not call ADP/PART (terug, dicht, mee) when the dictionary lists particle + verb
+ * as a separable verb. Runs on the server, which has the dictionary; `isSeparable` gets a lower-case infinitive.
+ */
+export function markSeparable(parsed: UdToken[], lang: string, isSeparable: (infinitive: string) => boolean): UdToken[] {
+  if (lang !== 'nl' && lang !== 'de') return parsed;
+  const prtDep = lang === 'de' ? 'svp' : 'compound:prt';
+  return parsed.map((x) => {
+    const v = parsed[x.head];
+    if (x.dep !== prtDep || x.pos === 'ADP' || x.pos === 'PART' || !v || !verbal(v)) return x;
+    const prt = low(x.t), lemma = low(v.lemma);
+    return isSeparable(lemma.startsWith(prt) ? lemma : prt + lemma) ? { ...x, sep: true } : x;
+  });
 }
 
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fx from './ud.fixtures.json';
-import { analyze, toUD, type Note, type UdToken } from './grammar';
+import { analyze, markSeparable, toUD, type Note, type UdToken } from './grammar';
 
 // Real parses from the server (spaCy), recorded once: see ud.fixtures.json.
 const parses = fx as Record<string, Record<string, UdToken[]>>;
@@ -57,6 +57,41 @@ describe('Dutch', () => {
   });
   it('repairs a subject the parser took for an object', () => {
     expect(roles('nl', 'De kinderen spelen in de tuin en de hond slaapt.')).toContain('subject:de hond');
+  });
+});
+
+describe('fixes found with the gold set (tests/grammar-gold)', () => {
+  it('finds English "to" + infinitive, which the parser labels aux', () => {
+    expect(note('en', 'They need to leave early.', 'teInf')?.p).toEqual({ te: 'to', verb: 'leave', main: 'need' });
+    expect(note('en', 'She went to the shop to buy bread.', 'teInf')?.p).toMatchObject({ te: 'to', verb: 'buy' }); // purpose
+    expect(note('nl', 'Het is leuk om samen te koken.', 'teInf')?.p).toMatchObject({ te: 'te', verb: 'koken' }); // om … te as a clause
+    expect(roles('en', 'They need to leave early.')).toContain('link:to');
+  });
+  it('gives no command note when the subject is a whole clause', () => {
+    for (const s of ['Wat hij zegt, is niet waar.', 'Wie dit leest, moet even lachen.', 'Toen ik wakker werd, bleek dat het had gesneeuwd.']) {
+      expect(kinds('nl', s), s).not.toContain('imperative');
+      expect(kinds('nl', s), s).toContain('tense');
+    }
+    expect(kinds('en', 'What she said was true.')).not.toContain('imperative');
+    // a command after a subordinate clause stays a command
+    expect(kinds('nl', 'Als je tijd hebt, bel me even.')).toContain('imperative');
+    expect(kinds('en', 'If you are tired, go to bed.')).toContain('imperative');
+  });
+  it('accepts particles such as terug and mee when the dictionary knows the separable verb', () => {
+    const dict = (inf: string) => ['terugkomen', 'meegaan'].includes(inf);
+    const sep = (s: string, d: (inf: string) => boolean) => analyze(markSeparable(parses.nl[s], 'nl', d), 'nl');
+    expect(sep('Ik kom morgen terug.', dict).notes.find((n) => n.kind === 'separable')?.p).toEqual({ verb: 'kom', prt: 'terug' });
+    expect(sep('Hij gaat vanavond mee.', dict).chunks.map((c) => `${c.role}:${c.text}`)).toContain('verbPart:mee');
+    // without the dictionary's word, an adverb is not taken for a particle
+    expect(sep('Ik kom morgen terug.', () => false).notes.map((n) => n.kind)).not.toContain('separable');
+    expect(markSeparable(parses.nl['Ik kom morgen terug.'], 'en', dict)).toBe(parses.nl['Ik kom morgen terug.']);
+  });
+  it('marks me/je/ons as reflexive only with a reflexive verb and a matching subject', () => {
+    expect(note('nl', 'We moeten ons haasten.', 'reflexive')?.p).toEqual({ pron: 'ons', verb: 'haasten' });
+    expect(note('nl', 'Ik kan me haar gezicht niet herinneren.', 'reflexive')?.p).toEqual({ pron: 'me', verb: 'herinneren' });
+    expect(roles('nl', 'Ik kan me haar gezicht niet herinneren.')).toContain('object:me');
+    expect(kinds('nl', 'Ik herinner je aan de afspraak.')).not.toContain('reflexive'); // "remind you": another person
+    expect(kinds('nl', 'Ik zie je morgen.')).not.toContain('reflexive'); // not a reflexive verb
   });
 });
 

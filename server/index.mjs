@@ -120,7 +120,8 @@ const handler = createHandler({
   sync: accounts ? createSync({ db }) : null,
   admin: accounts ? createAdmin({ db, auth: accounts, publicOrigin: env.PUBLIC_ORIGIN ?? '', llmStatus: () => llmLayer.status() }) : null,
   youtube,
-  parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources }) : null,
+  // The phase 3b dictionary confirms separable verbs whose particle is not a preposition (terugkomen, dichtdoen).
+  parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources, separable: (lang, inf) => db.dict(lang, inf)?.separable === true }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).
   tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, sources, limits: {
     ...(process.env.TTS_NEW_PER_10MIN ? { newPer10Min: Number(process.env.TTS_NEW_PER_10MIN) } : {}),
