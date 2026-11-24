@@ -91,11 +91,9 @@
   </ol>
 </section>
 
-{#if shown === 'video'}
-  <div class="tour-row">
-    <button class="tour" onclick={() => tour.start()}>✨ {t('tour.button')}</button>
-  </div>
-{/if}
+<div class="tour-row">
+  <button class="tour" onclick={() => tour.start(shown === 'text' ? 'text' : 'video')}>✨ {t('tour.button')}</button>
+</div>
 
 <p class="muted private">{t(account.status === 'in' ? 'home.private.account' : 'home.private')}</p>
 

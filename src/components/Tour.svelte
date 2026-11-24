@@ -17,7 +17,8 @@
   const visible = (el: Element | null): el is HTMLElement => {
     if (!(el instanceof HTMLElement)) return false;
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && el.offsetParent !== null;
+    // offsetParent is null for hidden elements, but also for fixed ones (the reader's player bar on a phone)
+    return r.width > 0 && r.height > 0 && (el.offsetParent !== null || getComputedStyle(el).position === 'fixed');
   };
   /** First visible match; inside a scrolling panel, one that is fully in view. */
   const find = (sels: string[]) => {
@@ -122,7 +123,7 @@
       <span class="muted">{t('tour.offer.d')}</span>
     </div>
     <div class="offer-actions">
-      <button class="primary" onclick={() => tour.start()}>{t('tour.offer.yes')}</button>
+      <button class="primary" onclick={() => tour.start(tour.offer ?? 'video')}>{t('tour.offer.yes')}</button>
       <button onclick={() => tour.dismissOffer()}>{t('tour.offer.no')}</button>
     </div>
   </div>
