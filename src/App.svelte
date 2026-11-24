@@ -7,7 +7,11 @@
   import { tour } from './lib/tour.svelte';
   import Home from './routes/Home.svelte';
   import NotFound from './routes/NotFound.svelte';
-  import { router } from './lib/router.svelte';
+  import Login from './routes/Login.svelte';
+  import { router, PUBLIC_ROUTES } from './lib/router.svelte';
+  import { account } from './lib/account.svelte';
+  import { sync } from './lib/sync.svelte';
+  import ImportAsk from './components/ImportAsk.svelte';
   import { app } from './lib/state.svelte';
   import { t } from './lib/i18n/index.svelte';
   import type { Component } from 'svelte';
@@ -42,14 +46,21 @@
 
   // The tour shows the video mode, so it is offered when someone first opens the player.
   $effect(() => { if (app.ready && router.route === 'watch') { const h = setTimeout(() => tour.maybeOffer(), 900); return () => clearTimeout(h); } });
-  const Page = $derived(router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
+  // Accounts: the server decides (off = the app works on this device only, as before).
+  void account.check();
+  const signIn = $derived(PUBLIC_ROUTES.includes(router.route));
+  const gated = $derived(account.status === 'out' && !signIn);
+  $effect(() => { if (gated) { try { sessionStorage.setItem('balonca.afterLogin', location.hash); } catch {} } });
+  $effect(() => { if (account.status === 'in' && signIn) location.hash = '#/'; });
+  $effect(() => { if (app.ready && account.status === 'in') void sync.start(); });
+  const Page = $derived(signIn || gated ? Login : router.route === 'home' ? Home : router.route === 'notfound' ? NotFound : router.route === 'watch' ? null : loaded[router.route]);
 </script>
 
 <a class="skip" href="#main" onclick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}>{t('skip')}</a>
 <Header />
 <main id="main" tabindex="-1">
-  {#if app.ready}
-    {#if watchOpened && Watch}
+  {#if app.ready && account.status !== 'unknown'}
+    {#if watchOpened && Watch && !gated}
       <div class="page" hidden={router.route !== 'watch'}><Watch /></div>
     {/if}
     {#if Page}
@@ -64,6 +75,7 @@
 <BottomNav />
 <Tour />
 <Toasts />
+<ImportAsk />
 
 <style>
   main { max-width: 1200px; margin: 0 auto; padding: var(--space-4); outline: none; min-height: 70dvh; }

@@ -97,9 +97,15 @@ async function main() {
     try { videos.push({ ...v, texts: await sentencesOf(yt, v) }); console.log(`${v.v}: ${videos.at(-1).texts.length} sentences`); }
     catch (e) { console.log(`${v.v}: skipped (${e.code ?? e.message})`); }
   }
-  const models = MODELS.filter((m) => m.local || tinkerKey);
+  const only = arg('models', '');
+  const models = MODELS.filter((m) => (m.local || tinkerKey) && (!only || only.split(',').some((x) => m.id.includes(x))));
+  // Each model's result is written as soon as it is done (a run cut short loses nothing); earlier ones are reused.
+  const partDir = path.join(path.dirname(OUT), 'compare-parts');
+  await mkdir(partDir, { recursive: true });
+  const partOf = (m) => path.join(partDir, `${m.id.replace(/[^A-Za-z0-9.-]+/g, '_')}-${N}.json`);
   const results = {}; // model -> { time, usd, out: {variant: {v: [..]}}, words: [...] }
   await Promise.all(models.map(async (m) => {
+    try { results[m.id] = JSON.parse(await readFile(partOf(m), 'utf8')); console.log(`${m.label}: reused`); return; } catch {}
     const llm = layer(m), r = (results[m.id] = { time: 0, usd: 0, out: {}, words: [], errors: 0 });
     const t0 = Date.now();
     const variants = [['tr', null], ['en', null], ...(m.id === 'gemma3:latest' || m.id.endsWith('Inkling') ? [['tr', 'en']] : [])];
@@ -126,6 +132,7 @@ async function main() {
     }
     r.time = (Date.now() - t0) / 1000;
     r.usd = llm.status().today.usd;
+    await writeFile(partOf(m), JSON.stringify(r));
     console.log(`${m.label}: finished in ${Math.round(r.time)} s, ${r.usd.toFixed(3)} $`);
   }));
 

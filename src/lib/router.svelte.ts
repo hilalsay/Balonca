@@ -1,13 +1,20 @@
-export type Route = 'home' | 'watch' | 'read' | 'words' | 'help' | 'notfound';
-const ROUTES: Route[] = ['home', 'watch', 'read', 'words', 'help'];
+export type Route = 'home' | 'watch' | 'read' | 'words' | 'help' | 'login' | 'invite' | 'reset' | 'notfound';
+// Address segment -> route. Sign-in pages have Turkish addresses because they are shared as links.
+const SEGMENTS: Record<string, Route> = {
+  home: 'home', watch: 'watch', read: 'read', words: 'words', help: 'help', giris: 'login', davet: 'invite', sifre: 'reset',
+};
+/** Pages someone who is not signed in may see. */
+export const PUBLIC_ROUTES: Route[] = ['login', 'invite', 'reset'];
 
 function parse() {
   const raw = location.hash.replace(/^#\/?/, '');
   const [path, query = ''] = raw.split('?');
-  const seg = path.split('/')[0] || 'home';
+  const [seg = '', rest = ''] = path.split('/');
   return {
-    route: ((ROUTES as string[]).includes(seg) ? seg : 'notfound') as Route,
+    route: (SEGMENTS[seg || 'home'] ?? 'notfound') as Route,
     params: new URLSearchParams(query),
+    /** The part after the first segment: the code of an invite link, the token of a reset link. */
+    rest: decodeURIComponent(rest),
   };
 }
 
@@ -18,6 +25,7 @@ addEventListener('hashchange', () => {
   if (next.route !== router.route) scrollTo(0, 0);
   router.route = next.route;
   router.params = next.params;
+  router.rest = next.rest;
 });
 
 export const watchUrl = (id: string, t = 0) => `#/watch?v=${id}${t ? `&t=${Math.max(0, Math.floor(t))}` : ''}`;
