@@ -110,16 +110,17 @@ describe('handlers', () => {
     expect(log).toHaveLength(2); // refused requests reach no parser
   });
 
-  it('marks particles of separable verbs the dictionary knows', async () => {
+  it('adds what the dictionary knows: separable particles', async () => {
     const doc = [{ t: 'Ik', pos: 'PRON', dep: 'nsubj', head: 1, lemma: 'ik' }, { t: 'kom', pos: 'VERB', dep: 'ROOT', head: 1, lemma: 'komen' },
       { t: 'terug', pos: 'ADV', dep: 'compound:prt', head: 1, lemma: 'terug' }];
     const worker = pyWorker({ python: 'py', script: 's', spawnImpl: fakeSpawn(() => ({ ok: true, docs: [doc] })) });
     const asked = [];
     const sources = { contains: async () => true };
-    const h = createParseHandler({ worker, info, sources, separable: (lang, inf) => { asked.push(`${lang}:${inf}`); return inf === 'terugkomen'; } });
+    const entries = { kom: { lemma: 'komen', pos: 'verb' }, terugkomen: { lemma: 'terugkomen', pos: 'verb', separable: true } };
+    const h = createParseHandler({ worker, info, sources, dictionary: (lang, form) => { asked.push(`${lang}:${form}`); return entries[form] ?? null; } });
     const r = res(); await h(req(JSON.stringify({ lang: 'nl', ref: { libraryId: 'doc1' }, sents: ['A.'] })), r, '?', { id: 1 }); await r.done;
     expect(JSON.parse(r.body).docs[0][2]).toMatchObject({ t: 'terug', sep: true });
-    expect(asked).toEqual(['nl:terugkomen']);
+    expect(asked).toEqual(['nl:kom', 'nl:terugkomen']);
   });
 
   it('speaks once per sentence, caches on disk and answers ranges', async () => {

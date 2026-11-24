@@ -6,4 +6,4 @@
  */
 export { parseSubtitles } from '../subtitles/parsers';
 export { splitText, allSentences, sentencesOf } from '../read/text';
-export { markSeparable } from '../read/grammar';
+export { markFromDictionary } from '../read/grammar';

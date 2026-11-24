@@ -15,7 +15,8 @@ export interface UdToken {
   head: number; // index of the head word in the sentence (itself for the root)
   lemma: string;
   morph: string; // "Tense=Past|VerbForm=Fin"
-  sep?: boolean; // set by the server: a particle the dictionary confirms as part of a separable verb (markSeparable)
+  sep?: boolean; // set by the server: a particle the dictionary confirms as part of a separable verb (markFromDictionary)
+  dlemma?: string; // set by the server: the dictionary's lemma of a verb form when it differs from the parser's (doe -> doen)
 }
 
 export type Role = 'subject' | 'verb' | 'verbPart' | 'object' | 'indirect' | 'complement' | 'adverbial' | 'link' | 'negation' | 'punct' | 'other';
@@ -451,11 +452,15 @@ function notesFor(a: Analysis, cx: Ctx): Note[] {
  *  server has confirmed the verb in the dictionary (`sep`). */
 const isParticle = (x: UdToken) => x.pos === 'ADP' || x.pos === 'PART' || x.sep === true;
 
-/** Infinitive of the verb at `v`, with its split-off particle in front (vraag … af -> afvragen). */
-function infinitive(tokens: UdToken[], kids: number[][], v: number): string {
-  const lemma = low(tokens[v].lemma);
+/** With a particle in front unless it is there already: (op, bellen) -> opbellen. */
+const withParticle = (prt: string, lemma: string) => (prt && !lemma.startsWith(prt) ? prt + lemma : lemma);
+/** Lemmas of a verb: the parser's (lower case) and the dictionary's when the server added one ("Herinner" -> herinneren). */
+const lemmasOf = (x: UdToken) => [...new Set([low(x.lemma), ...(x.dlemma ? [low(x.dlemma)] : [])])];
+
+/** Possible infinitives of the verb at `v`, with its split-off particle in front (vraag … af -> afvragen). */
+function infinitives(tokens: UdToken[], kids: number[][], v: number): string[] {
   const prt = kids[v].map((k) => tokens[k]).find((k) => k.dep === 'compound:prt');
-  return prt && !lemma.startsWith(low(prt.t)) ? low(prt.t) + lemma : lemma;
+  return lemmasOf(tokens[v]).map((l) => withParticle(prt ? low(prt.t) : '', l));
 }
 
 /** True for me/je/ons/zich as the object of a verb from REFLEXIVE_VERBS, in the same person as its subject
@@ -463,24 +468,34 @@ function infinitive(tokens: UdToken[], kids: number[][], v: number): string {
 function reflexiveOf(tokens: UdToken[], kids: number[][], i: number, lang: string): boolean {
   const x = tokens[i], person = REFLEXIVE_PRON[lang]?.[low(x.t)], v = x.head;
   if (!person || x.pos !== 'PRON' || !['obj', 'iobj', 'expl'].includes(base(x.dep)) || !tokens[v] || !verbal(tokens[v])) return false;
-  if (!REFLEXIVE_VERBS[lang]?.includes(infinitive(tokens, kids, v))) return false;
+  if (!infinitives(tokens, kids, v).some((inf) => REFLEXIVE_VERBS[lang]?.includes(inf))) return false;
   const subj = kids[v].map((k) => tokens[k]).find((k) => base(k.dep) === 'nsubj');
   const sp = subj && feats(subj).Person;
   return !sp || sp === person;
 }
 
+/** What the server's dictionary says about a lower-case word form (the phase 3b `dictionary` table). */
+export interface DictEntry { lemma?: string; pos?: string; separable?: boolean }
+
 /**
- * Marks particles the parser does not call ADP/PART (terug, dicht, mee) when the dictionary lists particle + verb
- * as a separable verb. Runs on the server, which has the dictionary; `isSeparable` gets a lower-case infinitive.
+ * Adds what the dictionary knows to a parse, on the server (which has the dictionary):
+ * - `dlemma` on a verb whose dictionary lemma differs from the parser's (doe -> doen, Herinner -> herinneren). It is
+ *   an extra candidate: the parser's lemma stays, so a wrong dictionary lemma cannot remove a right one.
+ * - `sep` on a particle the parser does not call ADP/PART (terug, dicht, mee) when particle + verb is listed as separable.
  */
-export function markSeparable(parsed: UdToken[], lang: string, isSeparable: (infinitive: string) => boolean): UdToken[] {
+export function markFromDictionary(parsed: UdToken[], lang: string, lookup: (form: string) => DictEntry | null | undefined): UdToken[] {
   if (lang !== 'nl' && lang !== 'de') return parsed;
   const prtDep = lang === 'de' ? 'svp' : 'compound:prt';
-  return parsed.map((x) => {
-    const v = parsed[x.head];
+  const toks = parsed.map((x) => {
+    if (!verbal(x)) return x;
+    const e = lookup(low(x.t));
+    const dl = e?.pos === 'verb' && typeof e.lemma === 'string' ? low(e.lemma) : '';
+    return dl && dl !== low(x.lemma) ? { ...x, dlemma: dl } : x;
+  });
+  return toks.map((x) => {
+    const v = toks[x.head];
     if (x.dep !== prtDep || x.pos === 'ADP' || x.pos === 'PART' || !v || !verbal(v)) return x;
-    const prt = low(x.t), lemma = low(v.lemma);
-    return isSeparable(lemma.startsWith(prt) ? lemma : prt + lemma) ? { ...x, sep: true } : x;
+    return lemmasOf(v).some((l) => lookup(withParticle(low(x.t), l))?.separable === true) ? { ...x, sep: true } : x;
   });
 }
 
