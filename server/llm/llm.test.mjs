@@ -94,3 +94,21 @@ describe('when the model skips the tool', () => {
     expect(await llmContext.run({}, async () => { await ok.chat('', body); return fellBack(); })).toBe(false);
   });
 });
+
+describe('calls that must not reach the local model', () => {
+  it('noFallback: a failing or unusable Tinker throws instead of asking Ollama', async () => {
+    const { llm, local } = setup([status(500), status(500), status(500)]);
+    await expect(llm.chat('', body, { noFallback: true }, 'grammar')).rejects.toMatchObject({ code: 'llm-failed' });
+    expect(local).toHaveLength(0);
+    const off = setup([], { provider: 'ollama' });
+    await expect(off.llm.chat('', body, { noFallback: true }, 'grammar')).rejects.toMatchObject({ code: 'llm-local' });
+    expect(off.local).toHaveLength(0);
+  });
+  it('counts spending per purpose for the day', async () => {
+    const { llm } = setup([answer({ 1: 'a' }), answer({ 1: 'b' })]);
+    await llm.chat('', body, {}, 'grammar');
+    await llm.chat('', body, {}, 'translate');
+    expect(await llm.spentToday('grammar')).toBeCloseTo((100 * 2 + 50 * 4) / 1e6);
+    expect(await llm.spentToday('define')).toBe(0);
+  });
+});

@@ -20,6 +20,7 @@ import { createSync } from './sync.mjs';
 import { createSources } from './sources.mjs';
 import { createAdmin } from './admin.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
+import { createGrammarEngine } from './grammar.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -69,6 +70,7 @@ const pivot = env.PIVOT ?? (llmLayer.useTinker ? 'off' : 'en');
 
 const cacheDir = process.env.TRANSLATE_CACHE_DIR ?? new URL('../.cache/translations', import.meta.url).pathname;
 const defineCacheDir = process.env.DEFINE_CACHE_DIR ?? new URL('../.cache/definitions', import.meta.url).pathname;
+const grammarCacheDir = env.GRAMMAR_CACHE_DIR ?? fileURLToPath(new URL('../.cache/grammar', import.meta.url));
 
 // Reading mode: grammar (spaCy) and speech (Piper) from a Python venv next to the server (see README "Reading mode").
 // NLP_PYTHON=off disables both.
@@ -100,7 +102,7 @@ const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.PUBLIC_OR
 // Deleting an account also removes what was cached for that user alone (their own texts' translations and meanings).
 async function forgetUser(id) {
   const { readdir, unlink } = await import('node:fs/promises');
-  for (const [dir, prefixes] of [[cacheDir, [`lib-${id}-`, `s2-${id}-`]], [defineCacheDir, [`s2-${id}-`, `u${id}-`]]]) {
+  for (const [dir, prefixes] of [[cacheDir, [`lib-${id}-`, `s2-${id}-`]], [defineCacheDir, [`s2-${id}-`, `u${id}-`]], [grammarCacheDir, [`u${id}-`]]]) {
     const names = await readdir(dir).catch(() => []);
     for (const f of names) if (prefixes.some((p) => f.startsWith(p))) await unlink(`${dir}/${f}`).catch(() => {});
   }
@@ -115,14 +117,20 @@ if (llmOn) translateHandler = createTranslateHandler({ ...named, cacheDir, chat,
   retranslatePerDay: Number(process.env.RETRANSLATE_PER_DAY ?? 3),
   ...(llmLayer.useTinker ? { jobs: 8, parallel: 4 } : {}) });
 
+// Grammar by the model (grammar-llm.md): GRAMMAR_ENGINE=model|parser (default parser), its own daily cap.
+const grammar = createGrammarEngine({ llm: llmLayer, engine: env.GRAMMAR_ENGINE === 'model' ? 'model' : 'parser',
+  budgetUsd: Number(env.GRAMMAR_DAILY_BUDGET_USD ?? 2), dictionary: (lang, form) => db.dict(lang, form),
+  cacheDir: grammarCacheDir });
+console.log(`grammar: ${env.GRAMMAR_ENGINE === 'model' ? 'model first, parser as fallback' : 'parser'}`);
+
 const handler = createHandler({
   auth: accounts,
   sync: accounts ? createSync({ db }) : null,
-  admin: accounts ? createAdmin({ db, auth: accounts, publicOrigin: env.PUBLIC_ORIGIN ?? '', llmStatus: () => llmLayer.status() }) : null,
+  admin: accounts ? createAdmin({ db, auth: accounts, publicOrigin: env.PUBLIC_ORIGIN ?? '', llmStatus: async () => ({ ...llmLayer.status(), grammar: await grammar.status() }) }) : null,
   youtube,
   // The phase 3b dictionary adds verb lemmas the parser gets wrong (doe -> doen) and confirms separable verbs whose
   // particle is not a preposition (terugkomen, dichtdoen).
-  parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources, dictionary: (lang, form) => db.dict(lang, form) }) : null,
+  parse: parseWorker ? createParseHandler({ worker: parseWorker, info, sources, dictionary: (lang, form) => db.dict(lang, form), grammar }) : null,
   // TTS_ENABLED=0 switches speech off (404; the site then reads with the device's own voice).
   tts: ttsWorker && process.env.TTS_ENABLED !== '0' ? createTtsHandler({ worker: ttsWorker, info, cacheDir: ttsCacheDir, sources, limits: {
     ...(process.env.TTS_NEW_PER_10MIN ? { newPer10Min: Number(process.env.TTS_NEW_PER_10MIN) } : {}),

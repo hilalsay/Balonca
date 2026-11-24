@@ -1,5 +1,7 @@
 // Grammar (sentence parsing) and speech for the reading mode, through the Python worker in nlp.py (spaCy + Piper).
-//   POST /api/parse  {lang, ref, sents: [...]}  -> {docs: [[token...]...]}   (see nlp.py for the token shape)
+//   POST /api/parse  {lang, ref, sents: [...], explain?, ui?}  -> {docs: [[token...]...], grammar?}   (see nlp.py for tokens)
+//                    explain: the first sentence is the one the reader opened; with GRAMMAR_ENGINE=model it may get
+//                    the model's labels: grammar = {source: 'model', answer} | {source: 'parser'} (server/grammar.mjs)
 //   GET  /api/tts?lang=nl&word=huis                 one word
 //   GET  /api/tts?lang=nl&lib=<id>&text=...         a sentence of a library text (must be in it)
 //   GET  /api/tts?lang=nl&wordId=<id>               the sentence a saved word came from
@@ -93,7 +95,8 @@ export function parseParseRequest(raw) {
   if (!LANG_RE.test(lang) || !Array.isArray(b?.sents) || !b.sents.length || b.sents.length > NLP_LIMITS.sents) throw new ApiError(400, 'bad-request');
   const sents = b.sents.map((s) => norm(s).slice(0, NLP_LIMITS.chars));
   if (sents.some((s) => !s) || sents.join('').length > NLP_LIMITS.total) throw new ApiError(400, 'bad-request');
-  return { lang, sents, ref: parseRef(b.ref) };
+  const ui = typeof b.ui === 'string' && /^[a-z]{2}$/.test(b.ui) ? b.ui : '';
+  return { lang, sents, ref: parseRef(b.ref), explain: b.explain === true, ui };
 }
 
 const json = (res, status, body, extra = {}) => {
@@ -105,10 +108,10 @@ const json = (res, status, body, extra = {}) => {
  * `dictionary(lang, form)`: the phase 3b entry of a lower-case word form (db.dict), or null. The parse then carries
  * the dictionary's verb lemmas and separable particles for the grammar rules (markFromDictionary in grammar.ts).
  */
-export function createParseHandler({ worker, info, cacheSize = 3000, sources, dictionary = null }) {
+export function createParseHandler({ worker, info, cacheSize = 3000, sources, dictionary = null, grammar = null }) {
   const cache = new Map(); // `${lang}\n${sentence}` -> tokens
   return async function parseRoute(req, res, ip, user) {
-    const { lang, sents, ref } = parseParseRequest(await readBody(req, 64_000));
+    const { lang, sents, ref, explain, ui } = parseParseRequest(await readBody(req, 64_000));
     if (!(await info()).parse.includes(lang)) throw new ApiError(422, 'unsupported-lang');
     if (!sources) throw new ApiError(404, 'not-found-route');
     for (const s of new Set(sents)) if (!(await sources.contains(ref, user, s))) throw new ApiError(404, 'not-in-source');
@@ -122,7 +125,9 @@ export function createParseHandler({ worker, info, cacheSize = 3000, sources, di
         if (cache.size > cacheSize) cache.delete(cache.keys().next().value);
       });
     }
-    json(res, 200, { docs: keys.map((k) => cache.get(k)) }, { 'cache-control': 'no-store' });
+    // Only the sentence the reader opened goes to the model (no prefetching of whole texts).
+    const g = explain && grammar ? await grammar.explain({ lang, text: sents[0], ref, user, ui }) : null;
+    json(res, 200, { docs: keys.map((k) => cache.get(k)), ...(g ? { grammar: g } : {}) }, { 'cache-control': 'no-store' });
   };
 }
 
