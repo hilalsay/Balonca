@@ -20,7 +20,10 @@ describe('one translation language', () => {
     expect([s.autoTranslate, s.meaningLang, translationLang(s)]).toEqual(['tr', 'tr', 'tr']);
   });
   it('keeps "ask every video" and a separate meaning language: no combination is lost', () => {
-    const ask = apply({ ...DEFAULT_SETTINGS, autoTranslate: 'ask' }, 'tr');
+    // the first choice switches translation on; "ask" chosen later on purpose stays
+    const first = apply({ ...DEFAULT_SETTINGS, autoTranslate: 'ask' }, 'tr');
+    expect([first.autoTranslate, first.meaningLang]).toEqual(['tr', 'tr']);
+    const ask = apply({ ...DEFAULT_SETTINGS, autoTranslate: 'ask', transLang: 'en' }, 'tr');
     expect([ask.autoTranslate, ask.meaningLang]).toEqual(['ask', 'tr']);
     const split = apply({ ...DEFAULT_SETTINGS, autoTranslate: 'tr', meaningLang: 'en', separateMeaning: true }, 'nl');
     expect([split.autoTranslate, split.meaningLang]).toEqual(['nl', 'en']);
