@@ -13,3 +13,12 @@ engine and the cost/latency columns.
 End to end: `npm run grammar:eval [-- --diff] [-- --size=lg]` (`run.mjs`) prints the spaCy/model versions, parses,
 bundles and scores basic and hard separately. Python comes from `NLP_PYTHON`, else `./pyenv/bin/python`, else `python3`;
 it needs `nl_core_news_md` and `en_core_web_md` (add a model installed elsewhere with `PYTHONPATH`).
+
+Review by a person (see "Reviewing" in tests/grammar-gold/README.md):
+- `review.mjs` writes `tests/grammar-gold/review.csv` (id, level, sentence, parts as `text [role]` joined with ` | `,
+  notes, mustNot, Turkish translation, OK?, comment). Opens in a spreadsheet program; save it again as CSV.
+- `apply-review.mjs <filled.csv> --reviewer=<name> [--dry-run]` sets `checked_by` on rows marked OK (ok/yes/evet)
+  that have no comment and no edited cell. Rows with a comment, an edit or a "no" are only listed (and written to
+  `<filled.csv>.to-resolve.md`); nothing in them is applied automatically.
+- Once a record is reviewed, the JSONL is the source: `build.py` refuses to rebuild (it would reset `checked_by`)
+  unless given `--force`.
