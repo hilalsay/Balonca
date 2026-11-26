@@ -22,6 +22,8 @@ import { createAdmin } from './admin.mjs';
 import { createParseHandler, createTtsHandler, nlpInfo, pyWorker } from './nlp.mjs';
 import { createGrammarEngine } from './grammar.mjs';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { markCreditGone, restarter, tinkerOff } from './llm/switch.mjs';
 import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT ?? 8787);
@@ -53,14 +55,26 @@ if (llmOn) {
 // Who writes: Tinker (LLM_PROVIDER=tinker and a key) with the local Ollama as fallback, or Ollama alone.
 const env = process.env;
 const tinkerModels = Object.fromEntries(Object.entries(env).filter(([k, v]) => /^TINKER_MODEL_[A-Z]{2,3}$/.test(k) && v).map(([k, v]) => [k.slice(13).toLowerCase(), v]));
+// Tinker ends on TINKER_END or when it says the credit is gone (server/llm/switch.mjs): then Ollama alone, after a restart.
+const usageDir = env.LLM_USAGE_DIR ?? fileURLToPath(new URL('../.cache/usage', import.meta.url));
+const creditMarker = path.join(usageDir, 'tinker-credit-gone');
+const tinkerEnd = tinkerOff({ end: env.TINKER_END, markerFile: creditMarker });
+const wantTinker = (env.LLM_PROVIDER ?? 'ollama') === 'tinker';
+if (wantTinker && tinkerEnd) console.log(`Tinker off (${tinkerEnd === 'date' ? `TINKER_END ${env.TINKER_END} reached` : `credit gone, see ${creditMarker}`}): Ollama alone`);
+const restartForOllama = restarter();
 const llmLayer = createLlm({
-  provider: env.LLM_PROVIDER ?? 'ollama', fallback: env.LLM_FALLBACK ?? 'ollama',
+  provider: wantTinker && !tinkerEnd ? 'tinker' : 'ollama', fallback: env.LLM_FALLBACK ?? 'ollama',
+  onCreditGone: () => { markCreditGone(creditMarker); restartForOllama('credit'); },
   tinker: { url: env.TINKER_BASE_URL || TINKER_DEFAULT_URL, key: env.TINKER_API_KEY ?? '', model: env.TINKER_MODEL || 'thinkingmachines/Inkling', models: tinkerModels },
   ollama: { model: llm.model, models: llm.models, chat: chatStream },
   concurrency: Number(env.LLM_CONCURRENCY ?? 16), dailyBudgetUsd: Number(env.LLM_DAILY_BUDGET_USD ?? 5),
   priceIn: Number(env.LLM_PRICE_IN ?? 1.87), priceOut: Number(env.LLM_PRICE_OUT ?? 4.68),
-  usageDir: env.LLM_USAGE_DIR ?? fileURLToPath(new URL('../.cache/usage', import.meta.url)),
+  usageDir,
 });
+// Crossing TINKER_END while running: checked every 10 minutes.
+if (wantTinker && !tinkerEnd && env.TINKER_END) {
+  setInterval(() => { if (tinkerOff({ end: env.TINKER_END }) === 'date') restartForOllama('date'); }, 600_000).unref();
+}
 const chat = (url, body, opts) => llmLayer.chat(url, body, opts);
 // Caches are keyed by the model that writes, so a better model never gets the older model's answers.
 const named = llmLayer.useTinker ? { ...llm, model: llmLayer.model(''), models: tinkerModels } : llm;

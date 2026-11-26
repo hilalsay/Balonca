@@ -54,7 +54,7 @@ export const tokens = (u = {}) => ({
 
 /**
  * cfg: { provider: 'tinker'|'ollama', fallback: 'ollama'|'off', tinker: {url, key, model, models}, ollama: {chat, model},
- *        concurrency, dailyBudgetUsd, priceIn, priceOut, usageDir }
+ *        concurrency, dailyBudgetUsd, priceIn, priceOut, usageDir, onCreditGone(status) }
  * Returns { chat, model(to), status() }. `fetchImpl`, `now`, `sleep` are injectable for tests.
  */
 export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), random = Math.random } = {}) {
@@ -108,6 +108,7 @@ export function createLlm(cfg, { fetchImpl = fetch, now = Date.now, sleep = (ms)
       }
       if (res.status === 402 || res.status === 403 || res.status === 401) {
         creditGoneUntil = now() + 3_600_000;
+        if (res.status !== 401) cfg.onCreditGone?.(res.status); // 401 is a key problem, not the end of the credit
         lastError = `tinker ${res.status}`;
         logError(`tinker refused (${res.status}): using the local model for an hour`);
         throw new ApiError(503, 'llm-credit');
