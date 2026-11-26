@@ -152,6 +152,11 @@ Provider settings (in `/etc/balonca.env` or `.env`, never in the repository): `L
 to Ollama for the rest of the day), `LLM_PRICE_IN` / `LLM_PRICE_OUT`. Tinker answers 429/5xx are retried three
 times, then Ollama answers; once the credit is gone (402/403) Tinker is asked again only once an hour.
 
+When the credit ends, the service switches to Ollama by itself: from `TINKER_END` (e.g. `2026-12-10`, the first day
+without Tinker), or as soon as Tinker answers 402/403 (it then writes `.cache/usage/tinker-credit-gone`). Under pm2 the
+service restarts once, a minute later, and runs on Ollama alone, with its own caches and no more Tinker calls. To use
+Tinker again: remove `TINKER_END`, delete that file and restart.
+
 Grammar by the model (`grammar-llm.md`): `GRAMMAR_ENGINE=model|parser` (default `parser`). With `model`, the sentence a
 reader opens in the grammar panel (Dutch and English) is labelled by the model; the explanations stay the hand-written
 templates, and its only free text is a short "AI note". The parser and its rules answer whenever the provider is not
