@@ -32,3 +32,18 @@ export function cleanEntry(e, lang) {
     ...(e.separable === true && pos === 'verb' && looksSeparable(lemma.toLocaleLowerCase(lang), lang) ? { separable: true } : {}),
   };
 }
+
+/**
+ * A phrase entry (word-groups.md, phase 3): the meaning of a multi-word expression as a whole. `idiom`: true when the
+ * meaning is not simply the words' own meanings together. null: not usable.
+ */
+export function cleanPhrase(e, phrase, pos) {
+  if (!e || typeof e !== 'object' || e.skip === true) return null;
+  // "Tekrar tekrar" -> "tekrar tekrar" (a meaning is not a sentence); "I" and other one-letter words stay.
+  const lower = (x) => (x.length > 1 && /^\p{Lu}\p{Ll}/u.test(x) ? x[0].toLocaleLowerCase('tr') + x.slice(1) : x);
+  const tr = list(e.tr).map(lower), en = list(e.en);
+  if (!tr.length || !en.length) return null;
+  return { kind: 'phrase', lemma: phrase, pos: POS_PHRASE.has(pos) ? pos : '', tr, en,
+    example: s(e.example, 160), example_tr: s(e.example_tr, 200), idiom: e.idiom === true };
+}
+const POS_PHRASE = new Set(['verb', 'phrase', 'prep_phrase', 'adv', 'adj', 'intj', 'proverb', 'conj', 'prep', 'pron']);
